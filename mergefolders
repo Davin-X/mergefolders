@@ -1,0 +1,163 @@
+#!/usr/bin/env bash
+# mergefolders — move the contents of several folders into one.
+#
+#   mergefolders [--to DIR] [--dry-run] [--keep] [--notify] ITEM...
+#
+# Each directory's contents move into DIR preserving their paths inside that
+# directory, so same-named subfolders merge. A name clash is never overwritten:
+# the incoming item becomes "name (2).ext". Empty source folders are removed
+# unless --keep. Files passed directly are moved into DIR as well.
+set -u
+
+PROG=${0##*/}
+DEST=""
+DRY_RUN=0
+KEEP=0
+NOTIFY=0
+MOVED=0
+RENAMED=0
+FAILED=0
+SKIPPED=0
+PLANNED=""
+
+usage() {
+  cat <<EOF
+Usage: $PROG [--to DIR] [--dry-run] [--keep] [--notify] ITEM...
+
+Move the contents of each ITEM (folder or file) into DIR. Folders merge
+recursively: same-named subfolders combine, files keep their relative paths.
+Existing names are never overwritten; the incoming item becomes "name (2).ext".
+
+  --to DIR    destination folder (default: choose one in Finder)
+  --dry-run   print what would move; change nothing
+  --keep      keep source folders even when empty
+  --notify    show a macOS notification/dialog (used by the Quick Action)
+EOF
+}
+
+die() { printf '%s: %s\n' "$PROG" "$1" >&2; exit 1; }
+
+while [ $# -gt 0 ]; do
+  case $1 in
+    --to) [ $# -ge 2 ] || die "--to needs a folder"; DEST=$2; shift 2 ;;
+    --to=*) DEST=${1#--to=}; shift ;;
+    -n|--dry-run) DRY_RUN=1; shift ;;
+    --keep) KEEP=1; shift ;;
+    --notify) NOTIFY=1; shift ;;
+    -h|--help) usage; exit 0 ;;
+    --) shift; break ;;
+    -*) die "unknown option: $1" ;;
+    *) break ;;
+  esac
+done
+
+[ $# -gt 0 ] || { usage >&2; exit 2; }
+
+if [ -z "$DEST" ]; then
+  DEST=$(osascript -e 'POSIX path of (choose folder with prompt "Merge into which folder?")' 2>/dev/null) || exit 1
+  DEST=${DEST%/}
+fi
+[ -d "$DEST" ] || die "not a folder: $DEST"
+DEST=$(cd -- "$DEST" && pwd -P) || die "cannot open $DEST"
+
+if [ "$DRY_RUN" -eq 1 ]; then
+  PLANNED=$(mktemp) || die "cannot create a temp file"
+  trap 'rm -f -- "$PLANNED"' EXIT
+fi
+
+# "photo.jpg" -> "photo (2).jpg"; ".env" -> ".env (2)"; "noext" -> "noext (2)"
+unique_path() {
+  local p=$1 dir name base ext n=2
+  dir=${p%/*}; name=${p##*/}
+  [ "$dir" = "$p" ] && dir="."
+  [ -z "$dir" ] && dir="/"
+  base=$name
+  ext=""
+  if [ "${name#*.}" != "$name" ] && [ "${name%%.*}" != "" ]; then
+    base=${name%.*}
+    ext=.${name##*.}
+  fi
+  while [ -e "$p" ] || [ -L "$p" ] || { [ -n "$PLANNED" ] && grep -qxF -- "$p" "$PLANNED"; }; do
+    p="$dir/$base ($n)$ext"
+    n=$((n + 1))
+  done
+  printf '%s' "$p"
+}
+
+move_item() {
+  local src=$1 rel=$2 target
+  target=$DEST/$rel
+  if [ "$DRY_RUN" -eq 0 ]; then
+    mkdir -p -- "${target%/*}" || { printf 'failed: %s\n' "$src" >&2; FAILED=$((FAILED + 1)); return; }
+  fi
+  if [ -e "$target" ] || [ -L "$target" ]; then
+    target=$(unique_path "$target")
+    RENAMED=$((RENAMED + 1))
+  fi
+  if [ "$DRY_RUN" -eq 1 ]; then
+    printf 'would move: %s -> %s\n' "$src" "$target"
+    printf '%s\n' "$target" >> "$PLANNED"
+    MOVED=$((MOVED + 1))
+    return
+  fi
+  if mv -- "$src" "$target"; then
+    MOVED=$((MOVED + 1))
+  else
+    printf 'failed: %s\n' "$src" >&2
+    FAILED=$((FAILED + 1))
+  fi
+}
+
+for arg in "$@"; do
+  if [ ! -e "$arg" ] && [ ! -L "$arg" ]; then
+    printf 'skip (missing): %s\n' "$arg" >&2
+    SKIPPED=$((SKIPPED + 1))
+    continue
+  fi
+
+  if [ -d "$arg" ]; then
+    src=$(cd -- "$arg" && pwd -P) || { printf 'skip (unreadable): %s\n' "$arg" >&2; SKIPPED=$((SKIPPED + 1)); continue; }
+    if [ "$src" = "$DEST" ]; then
+      printf 'skip (is the destination): %s\n' "$arg" >&2
+      SKIPPED=$((SKIPPED + 1))
+      continue
+    fi
+    case $DEST/ in
+      "$src"/*) die "destination is inside $arg; choose another folder" ;;
+    esac
+
+    # Snapshot the file list before moving anything: emptying a tree while
+    # `find` walks it makes BSD find skip siblings.
+    list=$(mktemp) || die "cannot create a temp file"
+    find "$src" -name .DS_Store -prune -o \( -type f -o -type l \) -print0 > "$list"
+    while IFS= read -r -d '' file; do
+      move_item "$file" "${file#"$src"/}"
+    done < "$list"
+    rm -f -- "$list"
+
+    if [ "$KEEP" -eq 0 ] && [ "$DRY_RUN" -eq 0 ]; then
+      # .DS_Store is not moved, so drop it before pruning or the folder survives.
+      find "$src" -name .DS_Store -delete 2>/dev/null || true
+      find "$src" -depth -type d -empty -delete 2>/dev/null || true
+    fi
+  else
+    src=$(cd -- "$(dirname -- "$arg")" && pwd -P)/$(basename -- "$arg")
+    move_item "$src" "$(basename -- "$arg")"
+  fi
+done
+
+if [ "$DRY_RUN" -eq 1 ]; then
+  printf 'dry run: %d would move, %d would be renamed\n' "$MOVED" "$RENAMED"
+else
+  printf 'moved %d · renamed %d · skipped %d · failed %d\n' "$MOVED" "$RENAMED" "$SKIPPED" "$FAILED"
+fi
+
+if [ "$NOTIFY" -eq 1 ]; then
+  if [ "$FAILED" -gt 0 ]; then
+    osascript -e "display dialog \"Merge Folders finished with $FAILED failure(s). Run it in Terminal for details.\" buttons {\"OK\"} default button 1 with title \"Merge Folders\"" >/dev/null 2>&1 || true
+  else
+    osascript -e "display notification \"Moved $MOVED item(s) into $(basename -- "$DEST")\" with title \"Merge Folders\"" >/dev/null 2>&1 || true
+  fi
+fi
+
+[ "$FAILED" -eq 0 ] || exit 1

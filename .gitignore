@@ -1,0 +1,6 @@
+finder/build/
+build/
+*.xcuserstate
+*.xcscmblueprint
+*.xcworkspace/xcuserdata/
+.DS_Store
