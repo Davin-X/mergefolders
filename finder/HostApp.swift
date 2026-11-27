@@ -62,7 +62,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let title = NSTextField(labelWithString: "Merge Folders is installed")
         title.font = .systemFont(ofSize: 16, weight: .semibold)
-        title.frame = NSRect(x: 20, y: 200, width: 460, height: 22)
+        add(title, frame: NSRect(x: 20, y: 200, width: 460, height: 22))
 
         let body = NSTextField(wrappingLabelWithString: """
             In Finder, select two or more folders (or files), right-click, and choose \
@@ -71,15 +71,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
             If the item is missing, turn on “Merge Folders” under Finder Extensions.
             """)
-        body.frame = NSRect(x: 20, y: 100, width: 460, height: 90)
+        add(body, frame: NSRect(x: 20, y: 100, width: 460, height: 90))
 
         let button = NSButton(title: "Open Finder Extensions…", target: self, action: #selector(openExtensions))
         button.bezelStyle = .rounded
-        button.frame = NSRect(x: 20, y: 40, width: 200, height: 32)
-
-        window.contentView?.addSubview(title)
-        window.contentView?.addSubview(body)
-        window.contentView?.addSubview(button)
+        add(button, frame: NSRect(x: 20, y: 40, width: 200, height: 32))
     }
 
     private func buildMergeWindow() {
@@ -88,18 +84,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let count = sources.count
         let header = NSTextField(labelWithString: "Merge \(count) selected item\(count == 1 ? "" : "s") into:")
         header.font = .systemFont(ofSize: 13, weight: .semibold)
-        header.frame = NSRect(x: 20, y: 390, width: 460, height: 20)
+        add(header, frame: NSRect(x: 20, y: 390, width: 460, height: 20))
 
         destLabel = NSTextField(labelWithString: "No destination chosen")
         destLabel.textColor = .secondaryLabelColor
         destLabel.lineBreakMode = .byTruncatingMiddle
-        destLabel.frame = NSRect(x: 20, y: 358, width: 340, height: 20)
+        add(destLabel!, frame: NSRect(x: 20, y: 358, width: 340, height: 20))
 
         chooseButton = NSButton(title: "Choose…", target: self, action: #selector(chooseDestination))
         chooseButton.bezelStyle = .rounded
-        chooseButton.frame = NSRect(x: 370, y: 352, width: 110, height: 30)
+        add(chooseButton!, frame: NSRect(x: 370, y: 352, width: 110, height: 30))
 
-        let scroll = NSScrollView(frame: NSRect(x: 20, y: 190, width: 460, height: 150))
+        let scroll = NSScrollView()
+        add(scroll, frame: NSRect(x: 20, y: 190, width: 460, height: 150))
         scroll.hasVerticalScroller = true
         scroll.borderType = .bezelBorder
         let text = NSTextView(frame: scroll.bounds)
@@ -111,21 +108,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         statusLabel = NSTextField(wrappingLabelWithString: "Files are moved, never copied. Name clashes are kept as “name (2).ext”.")
         statusLabel.textColor = .secondaryLabelColor
-        statusLabel.frame = NSRect(x: 20, y: 145, width: 460, height: 36)
+        add(statusLabel, frame: NSRect(x: 20, y: 145, width: 460, height: 36))
 
-        spinner = NSProgressIndicator(frame: NSRect(x: 20, y: 20, width: 20, height: 20))
+        spinner = NSProgressIndicator()
         spinner.style = .spinning
         spinner.isDisplayedWhenStopped = false
+        add(spinner, frame: NSRect(x: 20, y: 20, width: 20, height: 20))
 
         mergeButton = NSButton(title: "Merge", target: self, action: #selector(merge))
         mergeButton.bezelStyle = .rounded
         mergeButton.keyEquivalent = "\r"
         mergeButton.isEnabled = false
-        mergeButton.frame = NSRect(x: 370, y: 14, width: 110, height: 32)
-
-        for view in [header, destLabel!, chooseButton!, scroll, statusLabel!, spinner!, mergeButton!] {
-            window.contentView?.addSubview(view)
-        }
+        add(mergeButton, frame: NSRect(x: 370, y: 14, width: 110, height: 32))
     }
 
     private func makeWindow(title: String, height: CGFloat) -> NSWindow {
@@ -138,6 +132,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         window.title = title
         window.isReleasedWhenClosed = false
         return window
+    }
+
+    private func add(_ view: NSView, frame: NSRect) {
+        view.frame = frame
+        window.contentView?.addSubview(view)
     }
 
     // MARK: - Actions
@@ -218,6 +217,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             withIntermediateDirectories: true
         )
         if let handle = try? FileHandle(forWritingTo: logURL) {
+            if let attrs = try? FileManager.default.attributesOfItem(atPath: logURL.path),
+               let size = attrs[.size] as? NSNumber, size.intValue > 262_144 {
+                try? handle.close()
+                try? FileManager.default.removeItem(at: logURL)
+            }
             handle.seekToEndOfFile()
             handle.write(Data(text.utf8))
             try? handle.close()

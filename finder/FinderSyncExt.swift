@@ -19,6 +19,7 @@ final class FinderSync: FIFinderSync {
             action: #selector(mergeFolders(_:)),
             keyEquivalent: ""
         )
+        item.image = NSImage(systemSymbolName: "arrow.triangle.merge", accessibilityDescription: nil)
         item.target = self
         menu.addItem(item)
         return menu

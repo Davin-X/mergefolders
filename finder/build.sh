@@ -24,6 +24,7 @@ mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources" \
          "$ext/Contents/MacOS" "$ext/Contents/Resources"
 cp "$build/MergeFolders" "$app/Contents/MacOS/MergeFolders"
 cp "$build/MergeFoldersExt" "$ext/Contents/MacOS/MergeFoldersExt"
+cp "$here/AppIcon.icns" "$app/Contents/Resources/AppIcon.icns"
 install -m 755 "$root/mergefolders" "$ext/Contents/Resources/mergefolders"
 
 cat > "$app/Contents/Info.plist" <<PLIST
@@ -35,6 +36,7 @@ cat > "$app/Contents/Info.plist" <<PLIST
 	<key>CFBundleDisplayName</key><string>Merge Folders</string>
 	<key>CFBundleExecutable</key><string>MergeFolders</string>
 	<key>CFBundleIdentifier</key><string>$bundle_id</string>
+	<key>CFBundleIconFile</key><string>AppIcon</string>
 	<key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
 	<key>CFBundleName</key><string>MergeFolders</string>
 	<key>CFBundlePackageType</key><string>APPL</string>

@@ -19,6 +19,28 @@ RENAMED=0
 FAILED=0
 SKIPPED=0
 PLANNED=""
+LOCK=""
+LIST=""
+CLAIMED=""
+
+cleanup() {
+  [ -n "$PLANNED" ] && rm -f -- "$PLANNED"
+  [ -n "$LIST" ] && rm -f -- "$LIST"
+  [ -n "$LOCK" ] && rm -rf -- "$LOCK"
+}
+trap cleanup EXIT
+
+die() { printf '%s: %s\n' "$PROG" "$1" >&2; exit 1; }
+
+acquire_lock() {
+  local d
+  d="${TMPDIR:-/tmp}/mergefolders-lock-$(printf '%s' "$DEST" | cksum)"
+  for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do
+    if mkdir "$d" 2>/dev/null; then LOCK=$d; return 0; fi
+    sleep 0.2
+  done
+  die "another merge is already running; try again shortly"
+}
 
 usage() {
   cat <<EOF
@@ -31,11 +53,9 @@ Existing names are never overwritten; the incoming item becomes "name (2).ext".
   --to DIR    destination folder (default: choose one in Finder)
   --dry-run   print what would move; change nothing
   --keep      keep source folders even when empty
-  --notify    show a macOS notification/dialog (used by the Quick Action)
+  --notify    show a macOS notification/dialog (used by the Finder app)
 EOF
 }
-
-die() { printf '%s: %s\n' "$PROG" "$1" >&2; exit 1; }
 
 while [ $# -gt 0 ]; do
   case $1 in
@@ -62,26 +82,55 @@ DEST=$(cd -- "$DEST" && pwd -P) || die "cannot open $DEST"
 
 if [ "$DRY_RUN" -eq 1 ]; then
   PLANNED=$(mktemp) || die "cannot create a temp file"
-  trap 'rm -f -- "$PLANNED"' EXIT
 fi
 
-# "photo.jpg" -> "photo (2).jpg"; ".env" -> ".env (2)"; "noext" -> "noext (2)"
+if [ "$DRY_RUN" -eq 0 ]; then
+  acquire_lock
+fi
+
+# "photo.jpg" -> "photo (2).jpg"; ".env" -> ".env (2)"; ".config.json" -> ".config (2).json"; "noext" -> "noext (2)"
+claimed() {
+  case "
+$CLAIMED
+" in
+    *"
+$1
+"*) return 0 ;;
+  esac
+  return 1
+}
+
 unique_path() {
-  local p=$1 dir name base ext n=2
+  local p=$1 dir name base ext n=2 q
   dir=${p%/*}; name=${p##*/}
   [ "$dir" = "$p" ] && dir="."
   [ -z "$dir" ] && dir="/"
   base=$name
   ext=""
-  if [ "${name#*.}" != "$name" ] && [ "${name%%.*}" != "" ]; then
+  if [[ $name == *.* ]]; then
     base=${name%.*}
-    ext=.${name##*.}
+    ext=".$(printf '%s' "${name##*.}")"
+    [ -z "$base" ] && { base=$name; ext=""; }
   fi
-  while [ -e "$p" ] || [ -L "$p" ] || { [ -n "$PLANNED" ] && grep -qxF -- "$p" "$PLANNED"; }; do
-    p="$dir/$base ($n)$ext"
+  q=$p
+  n=2
+  while claimed "$q" || [ -e "$q" ] || [ -L "$q" ] || { [ -n "$PLANNED" ] && grep -qxF -- "$q" "$PLANNED"; }; do
+    q="$dir/$base ($n)$ext"
     n=$((n + 1))
   done
-  printf '%s' "$p"
+  printf '%s' "$q"
+}
+
+move_to() {
+  # Same volume: rename is atomic and keeps xattrs/tags. Cross volume: mv
+  # copies and drops them, so copy with metadata and delete the source.
+  if [ "$(stat -f %d "$1")" = "$(stat -f %d "${2%/*}")" ]; then
+    mv -- "$1" "$2"
+  elif [ -d "$1" ]; then
+    cp -p -- "$1" "$2" && rm -rf -- "$1"
+  else
+    cp -p -- "$1" "$2" && rm -f -- "$1"
+  fi
 }
 
 move_item() {
@@ -90,17 +139,19 @@ move_item() {
   if [ "$DRY_RUN" -eq 0 ]; then
     mkdir -p -- "${target%/*}" || { printf 'failed: %s\n' "$src" >&2; FAILED=$((FAILED + 1)); return; }
   fi
-  if [ -e "$target" ] || [ -L "$target" ]; then
+  if claimed "$target" || [ -e "$target" ] || [ -L "$target" ]; then
     target=$(unique_path "$target")
     RENAMED=$((RENAMED + 1))
   fi
+  CLAIMED="${CLAIMED}${target}
+"
   if [ "$DRY_RUN" -eq 1 ]; then
     printf 'would move: %s -> %s\n' "$src" "$target"
     printf '%s\n' "$target" >> "$PLANNED"
     MOVED=$((MOVED + 1))
     return
   fi
-  if mv -- "$src" "$target"; then
+  if move_to "$src" "$target"; then
     MOVED=$((MOVED + 1))
   else
     printf 'failed: %s\n' "$src" >&2
@@ -122,13 +173,16 @@ for arg in "$@"; do
       SKIPPED=$((SKIPPED + 1))
       continue
     fi
-    case $DEST/ in
-      "$src"/*) die "destination is inside $arg; choose another folder" ;;
-    esac
+    # Destination inside source means the merge would eat its own output.
+    # The trailing slash keeps a sibling like "/Photos2" from matching "/Photos".
+    if [ "${DEST#"$src"/}" != "$DEST" ]; then
+      die "destination is inside $arg; choose another folder"
+    fi
 
     # Snapshot the file list before moving anything: emptying a tree while
     # `find` walks it makes BSD find skip siblings.
     list=$(mktemp) || die "cannot create a temp file"
+    LIST=$list
     find "$src" -name .DS_Store -prune -o \( -type f -o -type l \) -print0 > "$list"
     while IFS= read -r -d '' file; do
       move_item "$file" "${file#"$src"/}"
@@ -154,9 +208,19 @@ fi
 
 if [ "$NOTIFY" -eq 1 ]; then
   if [ "$FAILED" -gt 0 ]; then
-    osascript -e "display dialog \"Merge Folders finished with $FAILED failure(s). Run it in Terminal for details.\" buttons {\"OK\"} default button 1 with title \"Merge Folders\"" >/dev/null 2>&1 || true
+    msg="Merge Folders finished with $FAILED failure(s). Run it in Terminal for details."
   else
-    osascript -e "display notification \"Moved $MOVED item(s) into $(basename -- "$DEST")\" with title \"Merge Folders\"" >/dev/null 2>&1 || true
+    msg="Moved $MOVED item(s) into $(basename -- "$DEST")."
+  fi
+  # Args go through argv so folder names with quotes can't break the script.
+  if [ "$FAILED" -gt 0 ]; then
+    osascript -e 'on run argv
+      display dialog (item 1 of argv) buttons {"OK"} default button 1 with title "Merge Folders"
+    end run' -- "$msg" >/dev/null 2>&1 || true
+  else
+    osascript -e 'on run argv
+      display notification (item 1 of argv) with title "Merge Folders"
+    end run' -- "$msg" >/dev/null 2>&1 || true
   fi
 fi
 

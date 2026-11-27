@@ -1,0 +1,15 @@
+name: test
+
+on: [push, pull_request]
+
+jobs:
+  test:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Shell tests
+        run: bash tests/test_mergefolders.sh
+      - name: Swift typecheck
+        run: |
+          xcrun --sdk macosx swiftc -typecheck finder/HostApp.swift
+          xcrun --sdk macosx swiftc -typecheck finder/FinderSyncExt.swift
