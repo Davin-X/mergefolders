@@ -4,11 +4,13 @@
 
 Combine folders from Finder or Terminal. If two folders contain `Trips/beach.jpg`, the first photo keeps its name and the incoming photo becomes `Trips/beach (2).jpg`. The app **moves** the originals. Use Preview in Finder or the Terminal example below to see the planned moves before changing your files.
 
+[![Latest release](https://img.shields.io/github/v/release/Davin-X/mergefolders?label=Download)](https://github.com/Davin-X/mergefolders/releases/latest)
+
 [Illustrated guide](https://davin-x.github.io/mergefolders/) · [Installation](#install) · [Finder walkthrough](#merge-from-finder) · [Terminal quick start](#try-the-cli-with-sample-files) · [File handling](#what-happens-to-my-files) · [Uninstall](#update-or-uninstall)
 
 ## Install
 
-1. On the repository’s GitHub page, choose **Code → Download ZIP**, then unzip it. If you already cloned the repository, use that folder.
+1. Download the source ZIP from the [latest release](https://github.com/Davin-X/mergefolders/releases/latest), or use **Code → Download ZIP** on the repository page. Unzip it. If you already cloned the repository, use that folder.
 2. Open Terminal, type `cd ` (including the space), drag the extracted folder into the window, then press Return.
 3. Choose an installation below.
 
