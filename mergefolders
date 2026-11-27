@@ -10,7 +10,7 @@
 # unless --keep. Files passed directly are moved into DIR as well.
 set -u
 
-VERSION=0.3.0
+VERSION=0.3.1
 PROG=${0##*/}
 LOG_DIR=${MERGEFOLDERS_LOG_DIR:-$HOME/Library/Logs/MergeFolders}
 DEST=""
