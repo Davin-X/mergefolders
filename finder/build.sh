@@ -27,7 +27,7 @@ case ${1-} in
   *) echo "usage: $0 [--build-only]" >&2; exit 2 ;;
 esac
 
-echo "compiling $version…"
+echo "compiling ${version}…"
 for arch in arm64 x86_64; do
   xcrun --sdk macosx swiftc -O -target "$arch-apple-macos13.0" -module-name MergeFoldersExt \
     -Xlinker -e -Xlinker _NSExtensionMain -o "$stage/MergeFoldersExt-$arch" "$here/FinderSyncExt.swift" -framework FinderSync
@@ -115,7 +115,7 @@ if [ "$sign_identity" = - ]; then
   echo "signing (ad-hoc)…"
   sign=(codesign --force --sign -)
 else
-  echo "signing as $sign_identity…"
+  echo "signing as ${sign_identity}…"
   sign=(codesign --force --options runtime --timestamp --sign "$sign_identity")
 fi
 "${sign[@]}" --entitlements "$stage/ext.entitlements" "$ext"
