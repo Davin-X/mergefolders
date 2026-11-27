@@ -51,11 +51,88 @@ else
   fail=$((fail + 1)); echo "FAIL: sibling prefix rejected"
 fi
 
+mkdir "$tmp/Photos/sub"
 if out=$(bash "$script" --to "$tmp/Photos/sub" "$tmp/Photos" 2>&1); then
   fail=$((fail + 1)); echo "FAIL: inside-destination not refused"
 else
-  pass=$((pass + 1))
+  assert_contains "nested destination rejected" "$out" "destination is inside"
 fi
+
+# Exercise real moves and check both copies after a collision.
+mkdir -p "$tmp/first/sub" "$tmp/second/sub" "$tmp/result"
+printf first > "$tmp/first/sub/photo.jpg"
+printf second > "$tmp/second/sub/photo.jpg"
+"$script" --to "$tmp/result" "$tmp/first" "$tmp/second" || exit 1
+[[ $(cat "$tmp/result/sub/photo.jpg") = first &&
+   $(cat "$tmp/result/sub/photo (2).jpg") = second &&
+   ! -e "$tmp/first" && ! -e "$tmp/second" ]] || exit 1
+pass=$((pass + 1))
+
+mkdir "$tmp/original"
+touch "$tmp/original/untouched"
+ln -s "$tmp/original" "$tmp/shortcut"
+"$script" --to "$tmp/result" "$tmp/shortcut/" || exit 1
+[[ -L "$tmp/result/shortcut" && -f "$tmp/original/untouched" ]] || exit 1
+pass=$((pass + 1))
+
+mkdir -p "$tmp/linked/sub" "$tmp/result2"
+touch "$tmp/linked/sub/file"
+ln -s "$tmp/original" "$tmp/result2/sub"
+if "$script" --to "$tmp/result2" "$tmp/linked"; then exit 1; fi
+[[ -f "$tmp/linked/sub/file" && ! -e "$tmp/original/file" ]] || exit 1
+pass=$((pass + 1))
+
+# A stub prevents traversal even if the root guard regresses.
+mkdir "$tmp/bin"
+cat > "$tmp/bin/find" <<'STUB'
+#!/bin/bash
+printf '%s\0' "$1/partial"
+exit 1
+STUB
+chmod +x "$tmp/bin/find"
+if out=$(PATH="$tmp/bin:$PATH" "$script" --dry-run --to "$tmp/result" / 2>&1); then exit 1; fi
+assert_contains "root guard" "$out" "filesystem root"
+mkdir "$tmp/incomplete"
+touch "$tmp/incomplete/partial"
+if PATH="$tmp/bin:$PATH" "$script" --to "$tmp/result" "$tmp/incomplete"; then exit 1; fi
+[[ -f "$tmp/incomplete/partial" && ! -e "$tmp/result/partial" ]] || exit 1
+pass=$((pass + 1))
+
+# Exercise the actual picker error handler without opening a dialog.
+cat > "$tmp/bin/osascript" <<'STUB'
+#!/bin/bash
+sed "s/return POSIX path of (choose folder.*)/error \"picker test\" number $PICKER_ERROR/" | /usr/bin/osascript
+STUB
+chmod +x "$tmp/bin/osascript"
+if ! out=$(PATH="$tmp/bin:$PATH" PICKER_ERROR=-128 "$script" --notify "$tmp/incomplete" 2>&1); then exit 1; fi
+[[ -z "$out" && -f "$tmp/incomplete/partial" ]] || exit 1
+pass=$((pass + 1))
+if out=$(PATH="$tmp/bin:$PATH" PICKER_ERROR=-1708 "$script" "$tmp/incomplete" 2>&1); then exit 1; fi
+assert_contains "picker failure remains visible" "$out" "picker test"
+
+# A lock left behind by a killed merge is taken over, a live one is not.
+lock_dir() { (cd -P -- "$1" && printf '%s' "${TMPDIR:-/tmp}/mergefolders-lock-$(printf '%s' "$PWD" | cksum)"); }
+mkdir -p "$tmp/stale" "$tmp/staleout"
+printf x > "$tmp/stale/file"
+lock=$(lock_dir "$tmp/staleout")
+mkdir -p "$lock"
+printf 999999 > "$lock/pid"
+"$script" --to "$tmp/staleout" "$tmp/stale" || exit 1
+[[ -f "$tmp/staleout/file" ]] || exit 1
+pass=$((pass + 1))
+
+mkdir -p "$tmp/busy" "$tmp/busyout"
+printf x > "$tmp/busy/file"
+lock=$(lock_dir "$tmp/busyout")
+mkdir -p "$lock"
+sleep 30 & holder=$!
+printf '%s' "$holder" > "$lock/pid"
+if out=$("$script" --to "$tmp/busyout" "$tmp/busy" 2>&1); then exit 1; fi
+kill "$holder" 2>/dev/null; wait "$holder" 2>/dev/null
+rm -rf -- "$lock"
+assert_contains "live lock still refuses" "$out" "already running"
+[[ -f "$tmp/busy/file" && ! -e "$tmp/busyout/file" ]] || exit 1
+pass=$((pass + 1))
 
 printf '%d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]

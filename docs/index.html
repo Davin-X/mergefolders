@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="description" content="Merge folders from Finder or Terminal on macOS. Preview file moves, keep both versions of matching names, and preserve nested paths.">
+<title>Merge Folders · A macOS field guide</title>
+<link rel="canonical" href="https://davin-x.github.io/mergefolders/">
+<meta name="theme-color" content="#f8f6ef">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Merge Folders">
+<meta property="og:title" content="Merge Folders for macOS">
+<meta property="og:description" content="Move several folders into one from Finder or Terminal. Same-named files are kept, never overwritten.">
+<meta property="og:url" content="https://davin-x.github.io/mergefolders/">
+<meta property="og:image" content="https://davin-x.github.io/mergefolders/assets/social-preview.png">
+<meta property="og:image:width" content="1280">
+<meta property="og:image:height" content="640">
+<meta property="og:image:alt" content="The Merge Folders icon beside the words Merge Folders and the line: move folders into one, nothing overwritten.">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="assets/favicon.png" sizes="32x32">
+<link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<a class="skip" href="#main">Skip to guide</a>
+<header><a class="brand" href="#main"><img src="assets/apple-touch-icon.png" alt="" width="40" height="40">Merge Folders</a>
+<nav aria-label="Guide"><a href="#install">Install</a><a href="#finder">Finder</a><a href="#terminal">Terminal</a><a href="#questions">Questions</a><a href="https://github.com/Davin-X/mergefolders">Source<span aria-hidden="true"> ↗</span></a></nav></header>
+<main id="main">
+<section class="hero"><div><p class="kicker">An open-source macOS utility</p>
+<h1>Many folders.<br>One <em>home.</em></h1>
+<p>Bring folders together from Finder or Terminal. Preview each move and keep both files when names match.</p>
+<a class="button" href="#install">Install Merge Folders <span aria-hidden="true">↓</span></a></div>
+<fieldset class="demo"><legend>Example merge</legend>
+<input id="before" type="radio" name="view" checked><label for="before">Before</label>
+<input id="after" type="radio" name="view"><label for="after">After</label>
+<div class="files original"><strong>First/</strong><div>Trips/beach.jpg</div><strong>Second/</strong><div>Trips/beach.jpg</div></div>
+<div class="files merged"><strong>Merged/Trips/</strong><div>beach.jpg</div><div>beach <mark>(2)</mark>.jpg</div></div>
+<p class="caption">Two source photos share the same relative path.</p>
+</fieldset></section>
+
+<section class="chapter" id="install"><h2>Install on Mac</h2><div>
+<p>Download and unzip the source. In Terminal, type <code>cd</code> followed by a space, drag the extracted folder into the window, and press Return.</p>
+<a class="download" href="mergefolders-source.zip" download>Download source ZIP ↓</a>
+<h3>Finder and Terminal</h3><p>Requires macOS 13 or later, write access to <code>/Applications</code>, and Apple’s Command Line Tools. If needed, run <code>xcode-select --install</code> and finish the Apple installer first.</p>
+<pre><code>./install.sh</code></pre>
+<h3>Terminal only</h3><p>The CLI installs in your home folder and uses the tools included with macOS.</p>
+<pre><code>./install.sh --cli-only</code></pre>
+</div></section>
+<section class="chapter" id="finder"><h2>Use Finder</h2><div>
+<ol><li><strong>Enable the menu.</strong> In System Settings, search for Extensions. Enable Merge Folders under Finder Extensions.</li>
+<li><strong>Select your sources.</strong> Command-click folders or files in Finder, right-click the selection, and choose <b>Merge Folders…</b>.</li>
+<li><strong>Choose the destination.</strong> In the example below, Camera and Phone are listed; click <b>Choose…</b> to select or create the Album folder.
+<a class="guide-shot" href="assets/merge-choose.png"><img src="assets/merge-choose.png" width="1000" height="924" loading="lazy" alt="Merge Folders lists Camera and Phone. Choose is available, and Preview and Merge are disabled until a destination is selected."></a></li>
+<li><strong>Preview the names.</strong> Click <b>Preview</b>. The last planned path ends in <code>beach (2).jpg</code>, so both photos will be kept. The dry run leaves the sources in place.
+<a class="guide-shot" href="assets/merge-preview.png"><img src="assets/merge-preview.png" width="1000" height="924" loading="lazy" alt="Preview lists two planned moves into Album and shows the second photo becoming beach (2).jpg."></a></li>
+<li><strong>Merge and inspect the result.</strong> Click <b>Merge</b>. In this example the summary reports two files moved, one renamed, and zero failures. Click <b>Open Folder</b> to see both photos, or <b>Done</b> to close the window.
+<a class="guide-shot" href="assets/merge-result.png"><img src="assets/merge-result.png" width="1000" height="924" loading="lazy" alt="Completed merge with Open Folder available, Done ready to close the window, and a summary of two moved, one renamed, zero skipped, and zero failed."></a></li>
+</ol>
+</div></section>
+<section class="chapter" id="terminal"><h2>Try Terminal</h2><div>
+<h3>1. Preview with sample files</h3>
+<p>Paste this into Terminal to create two disposable <code>note.txt</code> files and preview their destinations.</p>
+<pre><code>demo=$(mktemp -d)
+mkdir -p "$demo/First" "$demo/Second" "$demo/Merged"
+printf 'first copy\n' &gt; "$demo/First/note.txt"
+printf 'second copy\n' &gt; "$demo/Second/note.txt"
+~/bin/mergefolders --dry-run --to "$demo/Merged" \
+  "$demo/First" "$demo/Second"</code></pre>
+<h3>2. Run the merge</h3>
+<p>Perform the moves and list the merged folder:</p>
+<pre><code>~/bin/mergefolders --to "$demo/Merged" \
+  "$demo/First" "$demo/Second"
+ls "$demo/Merged"</code></pre>
+<p>Output shows <code>note.txt</code> and <code>note (2).txt</code>. Use <code>--keep</code> to keep empty source folders, or <code>--help</code> for all options.</p>
+</div></section>
+<section class="chapter" id="questions"><h2>Common questions</h2><div>
+<details><summary>Where is the Finder menu?</summary><p>Open MergeFolders from Applications and click Open Finder Extensions. Enable Merge Folders, reopen the Finder window, then right-click selected items.</p></details>
+<details><summary>Can I undo a merge?</summary><p>There’s no built-in undo. Use Preview and keep a backup of important files. If a merge fails partway, completed moves stay in place. Check the output and preview the remaining sources before retrying.</p></details>
+<details><summary>What about links or cloud files?</summary><p>Download cloud-only files first. Symbolic links move as links. A relative link can resolve differently in its new location.</p></details>
+<details><summary>How do I update or uninstall?</summary><p>To update, download the new source and rerun your installer. To uninstall, disable the Finder extension, quit Merge Folders, and run:</p>
+<pre><code>pluginkit -r "/Applications/MergeFolders.app/Contents/PlugIns/MergeFoldersExt.appex"</code></pre><p>Move MergeFolders.app to the Trash. Remove the CLI with <code>rm -i "$HOME/bin/mergefolders"</code>.</p></details>
+</div></section>
+</main><footer><span>Merge Folders for macOS</span><span><a href="https://github.com/Davin-X/mergefolders">Source</a> · <a href="https://github.com/Davin-X/mergefolders/blob/main/LICENSE">MIT licensed</a> · <a href="https://github.com/Davin-X/mergefolders/issues">Report an issue</a></span></footer>
+</body></html>

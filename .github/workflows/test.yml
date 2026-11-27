@@ -9,7 +9,10 @@ jobs:
       - uses: actions/checkout@v4
       - name: Shell tests
         run: bash tests/test_mergefolders.sh
-      - name: Swift typecheck
+      - name: Build and verify the Finder app
         run: |
-          xcrun --sdk macosx swiftc -typecheck finder/HostApp.swift
-          xcrun --sdk macosx swiftc -typecheck finder/FinderSyncExt.swift
+          bash finder/build.sh --build-only
+          app=finder/build/MergeFolders.app
+          codesign --verify --deep --strict "$app"
+          "$app/Contents/Resources/mergefolders" --help
+          nm -u "$app/Contents/PlugIns/MergeFoldersExt.appex/Contents/MacOS/MergeFoldersExt" | grep _NSExtensionMain

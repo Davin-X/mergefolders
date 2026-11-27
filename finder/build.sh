@@ -5,27 +5,32 @@ set -euo pipefail
 
 here=$(cd -- "$(dirname -- "$0")" && pwd)
 root=$(dirname -- "$here")
-app="/Applications/MergeFolders.app"
-ext="$app/Contents/PlugIns/MergeFoldersExt.appex"
 build="$here/build"
+mkdir -p "$build"
+stage=$(mktemp -d "$build/stage.XXXXXX")
+trap 'rm -rf -- "$stage"' EXIT
+app="$stage/MergeFolders.app"
+ext="$app/Contents/PlugIns/MergeFoldersExt.appex"
 bundle_id=com.devendra.mergefolders
 ext_id=com.devendra.mergefolders.ext
 
-rm -rf "$build" "$app"
-mkdir -p "$build"
+case ${1-} in
+  ""|--build-only) ;;
+  *) echo "usage: $0 [--build-only]" >&2; exit 2 ;;
+esac
 
 echo "compiling…"
 xcrun --sdk macosx swiftc -O -target "$(uname -m)-apple-macos13.0" -module-name MergeFoldersExt \
-  -o "$build/MergeFoldersExt" "$here/FinderSyncExt.swift" -framework FinderSync
-xcrun --sdk macosx swiftc -O -target "$(uname -m)-apple-macos13.0" -o "$build/MergeFolders" "$here/HostApp.swift"
+  -Xlinker -e -Xlinker _NSExtensionMain -o "$stage/MergeFoldersExt" "$here/FinderSyncExt.swift" -framework FinderSync
+xcrun --sdk macosx swiftc -O -target "$(uname -m)-apple-macos13.0" -o "$stage/MergeFolders" "$here/HostApp.swift"
 
 echo "assembling…"
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources" \
          "$ext/Contents/MacOS" "$ext/Contents/Resources"
-cp "$build/MergeFolders" "$app/Contents/MacOS/MergeFolders"
-cp "$build/MergeFoldersExt" "$ext/Contents/MacOS/MergeFoldersExt"
+cp "$stage/MergeFolders" "$app/Contents/MacOS/MergeFolders"
+cp "$stage/MergeFoldersExt" "$ext/Contents/MacOS/MergeFoldersExt"
 cp "$here/AppIcon.icns" "$app/Contents/Resources/AppIcon.icns"
-install -m 755 "$root/mergefolders" "$ext/Contents/Resources/mergefolders"
+install -m 755 "$root/mergefolders" "$app/Contents/Resources/mergefolders"
 
 cat > "$app/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -33,6 +38,11 @@ cat > "$app/Contents/Info.plist" <<PLIST
 <plist version="1.0">
 <dict>
 	<key>CFBundleDevelopmentRegion</key><string>en</string>
+	<key>CFBundleURLTypes</key>
+	<array><dict>
+		<key>CFBundleURLName</key><string>$bundle_id.selection</string>
+		<key>CFBundleURLSchemes</key><array><string>mergefolders</string></array>
+	</dict></array>
 	<key>CFBundleDisplayName</key><string>Merge Folders</string>
 	<key>CFBundleExecutable</key><string>MergeFolders</string>
 	<key>CFBundleIdentifier</key><string>$bundle_id</string>
@@ -42,7 +52,7 @@ cat > "$app/Contents/Info.plist" <<PLIST
 	<key>CFBundlePackageType</key><string>APPL</string>
 	<key>CFBundleShortVersionString</key><string>1.0</string>
 	<key>CFBundleSupportedPlatforms</key><array><string>MacOSX</string></array>
-	<key>CFBundleVersion</key><string>1</string>
+	<key>CFBundleVersion</key><string>3</string>
 	<key>DTPlatformName</key><string>macosx</string>
 	<key>LSApplicationCategoryType</key><string>public.app-category.utilities</string>
 	<key>LSMinimumSystemVersion</key><string>13.0</string>
@@ -65,7 +75,7 @@ cat > "$ext/Contents/Info.plist" <<PLIST
 	<key>CFBundlePackageType</key><string>XPC!</string>
 	<key>CFBundleShortVersionString</key><string>1.0</string>
 	<key>CFBundleSupportedPlatforms</key><array><string>MacOSX</string></array>
-	<key>CFBundleVersion</key><string>1</string>
+	<key>CFBundleVersion</key><string>3</string>
 	<key>DTPlatformName</key><string>macosx</string>
 	<key>LSMinimumSystemVersion</key><string>13.0</string>
 	<key>NSExtension</key>
@@ -79,7 +89,7 @@ PLIST
 
 plutil -lint "$app/Contents/Info.plist" "$ext/Contents/Info.plist" >/dev/null
 
-cat > "$build/ext.entitlements" <<'PLIST'
+cat > "$stage/ext.entitlements" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -90,23 +100,32 @@ cat > "$build/ext.entitlements" <<'PLIST'
 PLIST
 
 echo "signing (ad-hoc)…"
-codesign --force --sign - --entitlements "$build/ext.entitlements" "$ext"
+codesign --force --sign - --entitlements "$stage/ext.entitlements" "$ext"
 codesign --force --sign - "$app"
 codesign --verify --deep --strict "$app"
 
-echo "registering…"
+# Keep the previous install until the replacement has been built and verified.
+if [ "${1-}" = --build-only ]; then
+  target="$build/MergeFolders.app"
+else
+  target="/Applications/MergeFolders.app"
+fi
+if [ -e "$target" ] && [ "$(/usr/libexec/PlistBuddy -c 'Print CFBundleIdentifier' "$target/Contents/Info.plist" 2>/dev/null)" != "$bundle_id" ]; then
+  echo "A different app already exists at $target. Move it before installing." >&2
+  exit 1
+fi
+backup=$(mktemp -d "$(dirname "$target")/.mergefolders.XXXXXX")
+if [ -e "$target" ]; then mv "$target" "$backup/"; fi
+if ! mv "$app" "$target"; then
+  if [ -e "$backup/MergeFolders.app" ]; then mv "$backup/MergeFolders.app" "$target"; fi
+  rmdir "$backup"
+  exit 1
+fi
+rm -rf -- "$backup"
+echo "Built $target"
+if [ "${1-}" = --build-only ]; then exit 0; fi
+
 lsregister=/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister
-"$lsregister" -f "$app" || true
-pluginkit -a "$ext" || true
-pluginkit -e use -i "$ext_id" || true
-
-# Finder caches its menu; restarting it makes the new item appear immediately.
-killall Finder 2>/dev/null || true
-
-echo
-echo "installed: $app"
-echo "extension: $ext"
-pluginkit -m -p com.apple.FinderSync | grep -i mergefolders || echo "(extension not listed yet — enable it in System Settings → General → Login Items & Extensions → Finder Extensions)"
-echo
-echo "Try: select 2+ folders in Finder → right-click → “Merge Folders…”"
-echo "If it is missing: open MergeFolders.app, or System Settings → General → Login Items & Extensions → Finder Extensions."
+"$lsregister" -f "$target"
+pluginkit -a "$target/Contents/PlugIns/MergeFoldersExt.appex"
+echo "Enable Merge Folders in System Settings under Finder Extensions."

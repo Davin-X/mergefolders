@@ -12,6 +12,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private var destLabel: NSTextField!
     private var chooseButton: NSButton!
+    private let selectionText = NSTextView()
+    private var previewButton: NSButton!
     private var mergeButton: NSButton!
     private var statusLabel: NSTextField!
     private var spinner: NSProgressIndicator!
@@ -21,8 +23,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         .appendingPathComponent("Library/Logs/MergeFolders.log")
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        sources = Self.parseSources()
+        if sources.isEmpty { sources = Self.parseSources() }
         buildMenu()
+        showWindow()
+    }
+
+    func application(_ application: NSApplication, open urls: [URL]) {
+        guard let url = urls.first, urls.count == 1,
+              let request = URLComponents(url: url, resolvingAgainstBaseURL: false),
+              request.scheme == "mergefolders", request.host == "select",
+              let items = request.queryItems, !items.isEmpty else { return }
+        let paths = items.compactMap { item -> String? in
+            guard item.name == "path", let path = item.value, path.hasPrefix("/"),
+                  !path.utf8.contains(0) else { return nil }
+            return path
+        }
+        guard paths.count == items.count, window == nil || sources.isEmpty else { return }
+        sources = paths.map { URL(fileURLWithPath: $0) }
+        if window != nil {
+            window.orderOut(nil)
+            destination = nil
+            showWindow()
+        }
+    }
+
+    private func showWindow() {
         if sources.isEmpty {
             buildWelcomeWindow()
         } else {
@@ -30,6 +55,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         window.center()
         window.makeKeyAndOrderFront(nil)
+        if !sources.isEmpty { Self.appendLog("Opened merge window for \(sources.count) selected items.\n") }
         NSApp.activate(ignoringOtherApps: true)
     }
 
@@ -79,7 +105,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func buildMergeWindow() {
-        window = makeWindow(title: "Merge Folders", height: 430)
+        window = makeWindow(title: "Merge Folders — \(sources.count) selected", height: 430)
 
         let count = sources.count
         let header = NSTextField(labelWithString: "Merge \(count) selected item\(count == 1 ? "" : "s") into:")
@@ -99,14 +125,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         add(scroll, frame: NSRect(x: 20, y: 190, width: 460, height: 150))
         scroll.hasVerticalScroller = true
         scroll.borderType = .bezelBorder
-        let text = NSTextView(frame: scroll.bounds)
+        let text = selectionText
+        text.frame = scroll.bounds
+        text.autoresizingMask = [.width]
+        text.textContainer?.widthTracksTextView = true
         text.isEditable = false
         text.drawsBackground = false
         text.font = .monospacedSystemFont(ofSize: 11, weight: .regular)
         text.string = sources.map(\.path).joined(separator: "\n")
         scroll.documentView = text
 
-        statusLabel = NSTextField(wrappingLabelWithString: "Files are moved, never copied. Name clashes are kept as “name (2).ext”.")
+        statusLabel = NSTextField(wrappingLabelWithString: "Preview the planned moves or merge now. Files with matching names are kept with a numbered suffix.")
         statusLabel.textColor = .secondaryLabelColor
         add(statusLabel, frame: NSRect(x: 20, y: 145, width: 460, height: 36))
 
@@ -115,9 +144,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         spinner.isDisplayedWhenStopped = false
         add(spinner, frame: NSRect(x: 20, y: 20, width: 20, height: 20))
 
+        previewButton = NSButton(title: "Preview", target: self, action: #selector(preview))
+        previewButton.bezelStyle = .rounded
+        previewButton.isEnabled = false
+        add(previewButton, frame: NSRect(x: 255, y: 14, width: 110, height: 32))
+
         mergeButton = NSButton(title: "Merge", target: self, action: #selector(merge))
         mergeButton.bezelStyle = .rounded
-        mergeButton.keyEquivalent = "\r"
+        previewButton.keyEquivalent = "\r"
         mergeButton.isEnabled = false
         add(mergeButton, frame: NSRect(x: 370, y: 14, width: 110, height: 32))
     }
@@ -159,12 +193,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard panel.runModal() == .OK, let url = panel.url else { return }
 
         destination = url
+        selectionText.string = sources.map(\.path).joined(separator: "\n")
+        statusLabel.stringValue = "Preview the planned moves or merge now."
+        statusLabel.textColor = .secondaryLabelColor
+        previewButton.isEnabled = true
         destLabel.stringValue = url.path
         destLabel.textColor = .labelColor
         mergeButton.isEnabled = true
     }
 
-    @objc private func merge() {
+    @objc private func openDestination() {
+        if let destination { NSWorkspace.shared.open(destination) }
+    }
+
+    @objc private func closeWindow() { window.close() }
+
+    @objc private func preview() { runMerge(preview: true) }
+
+    @objc private func merge() { runMerge(preview: false) }
+
+    private func runMerge(preview: Bool) {
         guard let destination, !sources.isEmpty else { return }
         guard let script = Bundle.main.url(forResource: "mergefolders", withExtension: nil) else {
             statusLabel.stringValue = "This copy of Merge Folders is damaged: the mergefolders script is missing."
@@ -172,12 +220,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         mergeButton.isEnabled = false
+        previewButton.isEnabled = false
         chooseButton.isEnabled = false
         spinner.startAnimation(nil)
         statusLabel.textColor = .secondaryLabelColor
-        statusLabel.stringValue = "Merging…"
+        statusLabel.stringValue = preview ? "Preparing preview…" : "Merging…"
 
-        let arguments = ["--to", destination.path] + sources.map(\.path)
+        let arguments = (preview ? ["--dry-run"] : []) + ["--to", destination.path] + sources.map(\.path)
         DispatchQueue.global(qos: .userInitiated).async {
             let process = Process()
             let pipe = Pipe()
@@ -186,27 +235,43 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             process.standardOutput = pipe
             process.standardError = pipe
 
-            var output = ""
+            let output: String
+            let failed: Bool
             do {
                 try process.run()
                 let data = pipe.fileHandleForReading.readDataToEndOfFile()
                 process.waitUntilExit()
+                failed = process.terminationStatus != 0
                 output = String(decoding: data, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
             } catch {
+                failed = true
                 output = "Could not start the merge: \(error.localizedDescription)"
             }
 
-            Self.appendLog("$ mergefolders \(arguments.joined(separator: " "))\n\(output)\n")
-            let failed = process.terminationStatus != 0
+            if !preview {
+                Self.appendLog("$ mergefolders \(arguments.joined(separator: " "))\n\(output)\n")
+            }
 
             DispatchQueue.main.async {
                 self.spinner.stopAnimation(nil)
+                if !preview && !failed {
+                    self.chooseButton.title = "Open Folder"
+                    self.chooseButton.action = #selector(self.openDestination)
+                    // The merge is finished: the only remaining step is closing.
+                    self.mergeButton.title = "Done"
+                    self.mergeButton.action = #selector(self.closeWindow)
+                    self.previewButton.keyEquivalent = ""
+                    self.mergeButton.keyEquivalent = "\r"
+                }
                 self.chooseButton.isEnabled = true
+                self.previewButton.isEnabled = preview || failed
                 self.mergeButton.isEnabled = true
+                self.selectionText.string = output
+                self.selectionText.scrollToBeginningOfDocument(nil)
                 self.statusLabel.textColor = failed ? .systemRed : .labelColor
                 self.statusLabel.stringValue = output.isEmpty
                     ? (failed ? "The merge failed." : "Done.")
-                    : output
+                    : (output.components(separatedBy: "\n").last ?? output)
             }
         }
     }
@@ -220,7 +285,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             if let attrs = try? FileManager.default.attributesOfItem(atPath: logURL.path),
                let size = attrs[.size] as? NSNumber, size.intValue > 262_144 {
                 try? handle.close()
-                try? FileManager.default.removeItem(at: logURL)
+                try? text.write(to: logURL, atomically: true, encoding: .utf8)
+                return
             }
             handle.seekToEndOfFile()
             handle.write(Data(text.utf8))

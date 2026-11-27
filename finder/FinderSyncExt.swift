@@ -41,8 +41,12 @@ final class FinderSync: FIFinderSync {
         // instead of spawning a process. A new instance per invocation keeps
         // two merges independent.
         let configuration = NSWorkspace.OpenConfiguration()
-        configuration.arguments = ["--merge"] + urls.map(\.path)
         configuration.createsNewApplicationInstance = true
-        NSWorkspace.shared.openApplication(at: app, configuration: configuration)
+        var request = URLComponents()
+        request.scheme = "mergefolders"
+        request.host = "select"
+        request.queryItems = urls.map { URLQueryItem(name: "path", value: $0.path) }
+        guard let selection = request.url else { return }
+        NSWorkspace.shared.open([selection], withApplicationAt: app, configuration: configuration)
     }
 }

@@ -18,13 +18,11 @@ MOVED=0
 RENAMED=0
 FAILED=0
 SKIPPED=0
-PLANNED=""
 LOCK=""
 LIST=""
 CLAIMED=""
 
 cleanup() {
-  [ -n "$PLANNED" ] && rm -f -- "$PLANNED"
   [ -n "$LIST" ] && rm -f -- "$LIST"
   [ -n "$LOCK" ] && rm -rf -- "$LOCK"
 }
@@ -33,10 +31,22 @@ trap cleanup EXIT
 die() { printf '%s: %s\n' "$PROG" "$1" >&2; exit 1; }
 
 acquire_lock() {
-  local d
+  local d pid
   d="${TMPDIR:-/tmp}/mergefolders-lock-$(printf '%s' "$DEST" | cksum)"
   for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do
-    if mkdir "$d" 2>/dev/null; then LOCK=$d; return 0; fi
+    if mkdir "$d" 2>/dev/null; then
+      printf '%s' $$ > "$d/pid"
+      LOCK=$d
+      return 0
+    fi
+    # A merge killed with SIGKILL leaves its lock behind. Take it over once
+    # its owner is gone, so one crash cannot block the destination forever.
+    pid=$(cat "$d/pid" 2>/dev/null || true)
+    if [ -n "$pid" ]; then
+      kill -0 "$pid" 2>/dev/null || { rm -rf -- "$d"; continue; }
+    elif [ -n "$(find "$d" -prune -mmin +2 2>/dev/null)" ]; then
+      rm -rf -- "$d"; continue
+    fi
     sleep 0.2
   done
   die "another merge is already running; try again shortly"
@@ -74,15 +84,19 @@ done
 [ $# -gt 0 ] || { usage >&2; exit 2; }
 
 if [ -z "$DEST" ]; then
-  DEST=$(osascript -e 'POSIX path of (choose folder with prompt "Merge into which folder?")' 2>/dev/null) || exit 1
-  DEST=${DEST%/}
+  DEST=$(osascript <<'APPLESCRIPT'
+try
+  return POSIX path of (choose folder with prompt "Merge into which folder?")
+on error number -128
+  return ""
+end try
+APPLESCRIPT
+  ) || exit 1
+  [ -n "$DEST" ] || exit 0
 fi
 [ -d "$DEST" ] || die "not a folder: $DEST"
-DEST=$(cd -- "$DEST" && pwd -P) || die "cannot open $DEST"
-
-if [ "$DRY_RUN" -eq 1 ]; then
-  PLANNED=$(mktemp) || die "cannot create a temp file"
-fi
+DEST=$(cd -P -- "$DEST" && printf '%s.' "$PWD") || die "cannot open $DEST"
+DEST=${DEST%.}
 
 if [ "$DRY_RUN" -eq 0 ]; then
   acquire_lock
@@ -90,11 +104,14 @@ fi
 
 # "photo.jpg" -> "photo (2).jpg"; ".env" -> ".env (2)"; ".config.json" -> ".config (2).json"; "noext" -> "noext (2)"
 claimed() {
+  [ "$DRY_RUN" -eq 1 ] || return 1
+  local key
+  printf -v key '%q' "$1"
   case "
 $CLAIMED
 " in
     *"
-$1
+$key
 "*) return 0 ;;
   esac
   return 1
@@ -109,49 +126,46 @@ unique_path() {
   ext=""
   if [[ $name == *.* ]]; then
     base=${name%.*}
-    ext=".$(printf '%s' "${name##*.}")"
+    ext=".${name##*.}"
     [ -z "$base" ] && { base=$name; ext=""; }
   fi
   q=$p
   n=2
-  while claimed "$q" || [ -e "$q" ] || [ -L "$q" ] || { [ -n "$PLANNED" ] && grep -qxF -- "$q" "$PLANNED"; }; do
+  while claimed "$q" || [ -e "$q" ] || [ -L "$q" ]; do
     q="$dir/$base ($n)$ext"
     n=$((n + 1))
   done
-  printf '%s' "$q"
-}
-
-move_to() {
-  # Same volume: rename is atomic and keeps xattrs/tags. Cross volume: mv
-  # copies and drops them, so copy with metadata and delete the source.
-  if [ "$(stat -f %d "$1")" = "$(stat -f %d "${2%/*}")" ]; then
-    mv -- "$1" "$2"
-  elif [ -d "$1" ]; then
-    cp -p -- "$1" "$2" && rm -rf -- "$1"
-  else
-    cp -p -- "$1" "$2" && rm -f -- "$1"
-  fi
+  target=$q
 }
 
 move_item() {
-  local src=$1 rel=$2 target
-  target=$DEST/$rel
+  local src=$1 rel=$2 target parent key
+  target=${DEST%/}/$rel
+  parent=${target%/*}
+  while [ -n "$parent" ] && [ "$parent" != "$DEST" ]; do
+    if [ -L "$parent" ] || { [ -e "$parent" ] && [ ! -d "$parent" ]; } || claimed "$parent"; then
+      printf 'failed: destination parent is not a plain directory: %s\n' "$parent" >&2
+      FAILED=$((FAILED + 1))
+      return
+    fi
+    parent=${parent%/*}
+  done
   if [ "$DRY_RUN" -eq 0 ]; then
-    mkdir -p -- "${target%/*}" || { printf 'failed: %s\n' "$src" >&2; FAILED=$((FAILED + 1)); return; }
+    mkdir -p -- "${target%/*}/" || { printf 'failed: %s\n' "$src" >&2; FAILED=$((FAILED + 1)); return; }
   fi
   if claimed "$target" || [ -e "$target" ] || [ -L "$target" ]; then
-    target=$(unique_path "$target")
+    unique_path "$target"
     RENAMED=$((RENAMED + 1))
   fi
-  CLAIMED="${CLAIMED}${target}
-"
   if [ "$DRY_RUN" -eq 1 ]; then
+    printf -v key '%q' "$target"
+    CLAIMED="${CLAIMED}${key}
+"
     printf 'would move: %s -> %s\n' "$src" "$target"
-    printf '%s\n' "$target" >> "$PLANNED"
     MOVED=$((MOVED + 1))
     return
   fi
-  if move_to "$src" "$target"; then
+  if mv -n -- "$src" "$target" && [ ! -e "$src" ] && [ ! -L "$src" ]; then
     MOVED=$((MOVED + 1))
   else
     printf 'failed: %s\n' "$src" >&2
@@ -160,30 +174,35 @@ move_item() {
 }
 
 for arg in "$@"; do
+  while [[ $arg == ?*/ ]]; do arg=${arg%/}; done
   if [ ! -e "$arg" ] && [ ! -L "$arg" ]; then
     printf 'skip (missing): %s\n' "$arg" >&2
     SKIPPED=$((SKIPPED + 1))
     continue
   fi
 
-  if [ -d "$arg" ]; then
-    src=$(cd -- "$arg" && pwd -P) || { printf 'skip (unreadable): %s\n' "$arg" >&2; SKIPPED=$((SKIPPED + 1)); continue; }
-    if [ "$src" = "$DEST" ]; then
+  if [ -d "$arg" ] && [ ! -L "$arg" ]; then
+    src=$(cd -P -- "$arg" && printf '%s.' "$PWD") || { printf 'skip (unreadable): %s\n' "$arg" >&2; SKIPPED=$((SKIPPED + 1)); continue; }
+    src=${src%.}
+    [ ! "$src" -ef / ] || die "refusing to merge the filesystem root"
+    if [ "$src" -ef "$DEST" ]; then
       printf 'skip (is the destination): %s\n' "$arg" >&2
       SKIPPED=$((SKIPPED + 1))
       continue
     fi
     # Destination inside source means the merge would eat its own output.
-    # The trailing slash keeps a sibling like "/Photos2" from matching "/Photos".
-    if [ "${DEST#"$src"/}" != "$DEST" ]; then
-      die "destination is inside $arg; choose another folder"
-    fi
+    # Compare directory identities to handle aliases and case-insensitive volumes.
+    ancestor=$DEST
+    while [ -n "$ancestor" ]; do
+      [ ! "$ancestor" -ef "$src" ] || die "destination is inside $arg; choose another folder"
+      ancestor=${ancestor%/*}
+    done
 
     # Snapshot the file list before moving anything: emptying a tree while
     # `find` walks it makes BSD find skip siblings.
     list=$(mktemp) || die "cannot create a temp file"
     LIST=$list
-    find "$src" -name .DS_Store -prune -o \( -type f -o -type l \) -print0 > "$list"
+    find "$src" -name .DS_Store -prune -o \( -type f -o -type l \) -print0 > "$list" || die "cannot list all files in $src"
     while IFS= read -r -d '' file; do
       move_item "$file" "${file#"$src"/}"
     done < "$list"
@@ -195,8 +214,7 @@ for arg in "$@"; do
       find "$src" -depth -type d -empty -delete 2>/dev/null || true
     fi
   else
-    src=$(cd -- "$(dirname -- "$arg")" && pwd -P)/$(basename -- "$arg")
-    move_item "$src" "$(basename -- "$arg")"
+    move_item "$arg" "${arg##*/}"
   fi
 done
 

@@ -4,3 +4,5 @@ build/
 *.xcscmblueprint
 *.xcworkspace/xcuserdata/
 .DS_Store
+
+docs/mergefolders-source.zip

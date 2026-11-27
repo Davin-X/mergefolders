@@ -1,123 +1,111 @@
-<p align="center">
-  <img src="assets/icon.png" width="110" alt="Merge Folders icon">
-</p>
+<p align="center"><img src="docs/assets/icon.png" width="100" alt="Merge Folders icon"></p>
 
-<h1 align="center">Merge Folders</h1>
+# Merge Folders for macOS
 
-<p align="center">
-  Move the contents of several folders into one — same-named files are kept, never overwritten.<br>
-  A Finder right-click item and a command-line tool, sharing the same script.
-</p>
+Combine folders from Finder or Terminal. If two folders contain `Trips/beach.jpg`, the first photo keeps its name and the incoming photo becomes `Trips/beach (2).jpg`. The app **moves** the originals. Use Preview in Finder or the Terminal example below to see the planned moves before changing your files.
 
-<p align="center">
-  <a href="https://github.com/Davin-X/mergefolders/actions/workflows/test.yml"><img src="https://github.com/Davin-X/mergefolders/actions/workflows/test.yml/badge.svg" alt="tests"></a>
-  <img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="MIT license">
-  <img src="https://img.shields.io/badge/platform-macOS%2013%2B-lightgrey.svg" alt="macOS 13+">
-</p>
-
-<p align="center">
-  <img src="assets/merge-window.png" width="480" alt="Merge Folders window showing two selected folders and a destination picker">
-</p>
-
-## Why
-
-- **Nothing is overwritten.** A clash becomes `name (2).ext` — `beach.jpg` → `beach (2).jpg` → `beach (3).jpg`.
-- **Folders merge by relative path.** Same-named subfolders combine instead of replacing each other.
-- **Real moves, not copies.** Empty source folders are removed when done (use `--keep` to keep them).
-- **Safe under concurrency.** One merge per destination at a time, so two Finder invocations can't corrupt the rename numbering.
+[Illustrated guide](https://davin-x.github.io/mergefolders/) · [Installation](#install) · [Finder walkthrough](#merge-from-finder) · [Terminal quick start](#try-the-cli-with-sample-files) · [File handling](#what-happens-to-my-files) · [Uninstall](#update-or-uninstall)
 
 ## Install
 
-Requires macOS 13 or later and the Xcode command-line tools.
+1. On the repository’s GitHub page, choose **Code → Download ZIP**, then unzip it. If you already cloned the repository, use that folder.
+2. Open Terminal, type `cd ` (including the space), drag the extracted folder into the window, then press Return.
+3. Choose an installation below.
+
+| What you want | Run in Terminal | Installed location |
+| --- | --- | --- |
+| Finder menu and Terminal command | `./install.sh` | `/Applications/MergeFolders.app` and `~/bin/mergefolders` |
+| Terminal command only | `./install.sh --cli-only` | `~/bin/mergefolders` |
+
+The Finder app requires macOS 13 or later, write access to `/Applications`, and Apple’s Command Line Tools. To install the tools, run `xcode-select --install`, finish the Apple installer, then run `./install.sh`. The CLI-only option uses the Bash and file utilities included with macOS and skips compilation.
+
+## Merge from Finder
+
+1. Open **System Settings**, search for **Extensions**, find **Finder Extensions**, and enable **Merge Folders**. The settings location varies by macOS version.
+2. In a Finder window, Command-click the source folders or files. Right-click the selection and choose **Merge Folders…**.
+3. **Choose the destination.** Check that Camera and Phone are both listed. Click **Choose…** and select or create the Album folder.
+
+   <img src="docs/assets/merge-choose.png" width="500" alt="Merge Folders lists Camera and Phone. Choose is available, and Preview and Merge are disabled until a destination is selected.">
+
+4. **Preview the names.** Click **Preview**. The last planned path ends in `beach (2).jpg`, so both photos will be kept. The dry run leaves the sources in place.
+
+   <img src="docs/assets/merge-preview.png" width="500" alt="Preview lists two planned moves into Album and shows the second photo becoming beach (2).jpg.">
+
+5. **Merge and inspect the result.** Click **Merge**. In this example the summary reports two files moved, one renamed, and zero failures. Click **Open Folder** to see both photos, or **Done** to close the window.
+
+   <img src="docs/assets/merge-result.png" width="500" alt="Completed merge with Open Folder available, Done ready to close the window, and a summary of two moved, one renamed, zero skipped, and zero failed.">
+
+If the menu is missing, open **MergeFolders** from Applications, use **Open Finder Extensions…**, and check the switch. Reopen the Finder window after enabling it.
+
+## Try the CLI with sample files
+
+Paste this into Terminal. It creates a fresh practice folder with two files of the same name and previews the merge.
 
 ```sh
-git clone https://github.com/Davin-X/mergefolders.git
-cd mergefolders
-./install.sh
+demo=$(mktemp -d)
+mkdir -p "$demo/First" "$demo/Second" "$demo/Merged"
+printf 'first copy\n' > "$demo/First/note.txt"
+printf 'second copy\n' > "$demo/Second/note.txt"
+~/bin/mergefolders --dry-run --to "$demo/Merged" "$demo/First" "$demo/Second"
 ```
 
-This installs `mergefolders` to `~/bin` and builds **MergeFolders.app** into `/Applications`, ad-hoc signed and registered with the Finder extension system.
-
-Then enable it: **System Settings → General → Login Items & Extensions → Finder Extensions → Merge Folders**.
-
-## Use
-
-**Finder:** select two or more folders (or files) → right-click → **Merge Folders…** → choose the destination → **Merge**.
-
-**Terminal:**
+To perform the merge and see both files, run these commands in the same Terminal window.
 
 ```sh
-mergefolders --to ~/Pictures/Merged ~/Pictures/2023 ~/Pictures/2024
-
-# preview only
-mergefolders --dry-run --to ~/Pictures/Merged ~/Pictures/2023
+~/bin/mergefolders --to "$demo/Merged" "$demo/First" "$demo/Second"
+ls "$demo/Merged"
 ```
 
-| flag | meaning |
+The destination now contains `note.txt` and `note (2).txt`. For your own files, replace the three folder paths. Put paths containing spaces in quotes. You can also drag folders from Finder into Terminal to enter their paths.
+
+| Option | Use |
 | --- | --- |
-| `--to DIR` | destination folder (default: ask with a Finder dialog) |
-| `--dry-run` | print the plan, change nothing |
-| `--keep` | keep empty source folders |
-| `--notify` | macOS notification when done |
+| `--to DIR` | Merge into an existing directory. Omit this option to choose one in a dialog. |
+| `--dry-run`, `-n` | Preview planned file moves and names. |
+| `--keep` | Leave the source directory structure in place after moving its files. |
+| `--notify` | Display a macOS notification on completion or a dialog on failure. |
+| `--help` | Print usage and exit. |
 
-## How it works
+## What happens to my files?
 
-Each selected folder is walked, and every file moves to the same relative path inside the destination. Same-named subfolders combine; a file that is already there is renamed instead of replaced.
+- Files retain their relative paths. Same-named subdirectories combine. A naming conflict adds the first available suffix, starting at ` (2)`, before the last extension.
+- Selected symbolic links move as links. Relative links keep their stored target text, so moving one can change where it resolves. A symlink beneath the destination cannot serve as a parent for incoming files.
+- Empty source directories are pruned after a move unless you use `--keep`. Empty directories are not created in the destination. Finder’s `.DS_Store` files inside sources are skipped.
+- You can select the destination as one of the source folders. The tool skips it. A destination nested inside another source is rejected.
+- A merge performs individual moves. If it stops partway, completed moves stay in place. Read the error, check the destination, then preview the remaining sources before retrying. Keep a backup when merging important files. There is no built-in undo.
+- Download cloud-only files before merging. For a Finder merge, diagnostic output is saved to `~/Library/Logs/MergeFolders.log`.
 
-```text
-Before
-2023/                 2024/
-  beach.jpg             beach.jpg
-  sunset.jpg            hike.jpg
+## Update or uninstall
 
-mergefolders --to Photos 2023 2024
+To update, download the new source or update your clone, then rerun the installation command you originally chose.
 
-After
-Photos/
-  beach.jpg            from 2023
-  beach (2).jpg        from 2024 — clash kept
-  sunset.jpg
-  hike.jpg
+To uninstall the Finder integration, quit Merge Folders, disable its Finder extension in System Settings, and run the following commands. Unregister the extension while the app is still installed.
+
+```sh
+pluginkit -r "/Applications/MergeFolders.app/Contents/PlugIns/MergeFoldersExt.appex"
 ```
 
-Hidden files keep their leading dot, so a clash on `.config.json` becomes `.config (2).json` — never `.config.json (2)`.
+Move **MergeFolders.app** from Applications to the Trash. To remove the Terminal command, run `rm -i "$HOME/bin/mergefolders"`.
 
-A few details that matter in practice:
-
-- **Same volume:** the move is an atomic rename.
-- **Cross volume:** files are copied with metadata (tags and extended attributes) and the source is deleted only after the copy succeeds.
-- **Locking:** a destination-keyed lock makes concurrent merges wait, then fail cleanly instead of racing on `name (2)` numbering.
-- **`.DS_Store`** is dropped, not merged.
-
-## Development
+## Development and release checks
 
 ```sh
 bash tests/test_mergefolders.sh
+bash finder/build.sh --build-only
 ```
 
-The suite covers rename formats (including hidden and multi-dot names), the sibling-prefix destination check, and refusal to merge a destination into its own source. CI runs it on macOS together with a Swift typecheck of both apps.
+The second command compiles and ad-hoc signs the app at `finder/build/MergeFolders.app`. CI verifies the signature, checks the extension linkage, and runs the bundled CLI. The public installation instructions build from source. Distributing a ready-made app requires a separate signing and notarization workflow for a standard Gatekeeper installation experience.
 
-```text
-mergefolders   command-line script (bash 3.2 compatible)
-finder/        Finder Sync extension + host app (Swift), icon, build script
-tests/         shell tests
-assets/        README and social-preview images
-```
+Before tagging a release, test the documented install on a Mac, enable the Finder extension, and merge two disposable folders containing a same-named file. Confirm both contents in the destination, then test removal.
 
-## Limitations
+## Publish the GitHub Pages guide
 
-- No undo — keep-both renaming is the safety net.
-- The app is ad-hoc signed, so there is no notarized download: build it locally with `./install.sh`.
-- Download iCloud/Dropbox placeholders before moving them.
+The illustrated guide lives in [docs/index.html](docs/index.html). In the GitHub repository, open **Settings → Pages → Build and deployment → Source** and select **GitHub Actions**. Push the source to `main`, or run **Documentation** from the Actions tab. The workflow publishes the guide and a downloadable ZIP of that exact commit. The deployment summary shows the live URL. Add that URL to the repository’s **About → Website** field so visitors can find it.
 
-## Uninstall
+To preview the design locally, open `docs/index.html` in a browser. To test the download for the current commit, run:
 
 ```sh
-rm ~/bin/mergefolders
-rm -rf /Applications/MergeFolders.app
-pluginkit -a "/Applications/MergeFolders.app/Contents/PlugIns/MergeFoldersExt.appex"
+git archive --format=zip --prefix=mergefolders/ -o docs/mergefolders-source.zip HEAD
 ```
 
-## License
-
-[MIT](LICENSE) © 2026 Devendra Kumar
+[MIT license](LICENSE)
