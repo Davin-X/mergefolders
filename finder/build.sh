@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
-# Builds MergeFolders.app (host app + Finder Sync extension), ad-hoc signs it,
-# installs it to /Applications, and registers the extension with Finder.
+# Builds MergeFolders.app (host app + Finder Sync extension) for Apple silicon
+# and Intel, signs it, installs it to /Applications, and registers the
+# extension with Finder. SIGN_IDENTITY="Developer ID Application: …" signs for
+# notarization; the default "-" signs ad-hoc for local use.
 set -euo pipefail
 
 here=$(cd -- "$(dirname -- "$0")" && pwd)
@@ -13,16 +15,26 @@ app="$stage/MergeFolders.app"
 ext="$app/Contents/PlugIns/MergeFoldersExt.appex"
 bundle_id=com.devendra.mergefolders
 ext_id=com.devendra.mergefolders.ext
+sign_identity=${SIGN_IDENTITY:--}
+# The CLI script holds the only version number.
+version=$(sed -n 's/^VERSION=//p' "$root/mergefolders")
+[[ $version =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "no VERSION=x.y.z in mergefolders" >&2; exit 1; }
+IFS=. read -r major minor patch <<<"$version"
+build_number=$((major * 10000 + minor * 100 + patch))  # 0.3.0 -> 300; must keep rising
 
 case ${1-} in
   ""|--build-only) ;;
   *) echo "usage: $0 [--build-only]" >&2; exit 2 ;;
 esac
 
-echo "compiling…"
-xcrun --sdk macosx swiftc -O -target "$(uname -m)-apple-macos13.0" -module-name MergeFoldersExt \
-  -Xlinker -e -Xlinker _NSExtensionMain -o "$stage/MergeFoldersExt" "$here/FinderSyncExt.swift" -framework FinderSync
-xcrun --sdk macosx swiftc -O -target "$(uname -m)-apple-macos13.0" -o "$stage/MergeFolders" "$here/HostApp.swift"
+echo "compiling $version…"
+for arch in arm64 x86_64; do
+  xcrun --sdk macosx swiftc -O -target "$arch-apple-macos13.0" -module-name MergeFoldersExt \
+    -Xlinker -e -Xlinker _NSExtensionMain -o "$stage/MergeFoldersExt-$arch" "$here/FinderSyncExt.swift" -framework FinderSync
+  xcrun --sdk macosx swiftc -O -target "$arch-apple-macos13.0" -o "$stage/MergeFolders-$arch" "$here/HostApp.swift"
+done
+lipo -create -output "$stage/MergeFoldersExt" "$stage/MergeFoldersExt-arm64" "$stage/MergeFoldersExt-x86_64"
+lipo -create -output "$stage/MergeFolders" "$stage/MergeFolders-arm64" "$stage/MergeFolders-x86_64"
 
 echo "assembling…"
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources" \
@@ -50,9 +62,9 @@ cat > "$app/Contents/Info.plist" <<PLIST
 	<key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
 	<key>CFBundleName</key><string>MergeFolders</string>
 	<key>CFBundlePackageType</key><string>APPL</string>
-	<key>CFBundleShortVersionString</key><string>1.0</string>
+	<key>CFBundleShortVersionString</key><string>$version</string>
 	<key>CFBundleSupportedPlatforms</key><array><string>MacOSX</string></array>
-	<key>CFBundleVersion</key><string>3</string>
+	<key>CFBundleVersion</key><string>$build_number</string>
 	<key>DTPlatformName</key><string>macosx</string>
 	<key>LSApplicationCategoryType</key><string>public.app-category.utilities</string>
 	<key>LSMinimumSystemVersion</key><string>13.0</string>
@@ -73,9 +85,9 @@ cat > "$ext/Contents/Info.plist" <<PLIST
 	<key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
 	<key>CFBundleName</key><string>MergeFoldersExt</string>
 	<key>CFBundlePackageType</key><string>XPC!</string>
-	<key>CFBundleShortVersionString</key><string>1.0</string>
+	<key>CFBundleShortVersionString</key><string>$version</string>
 	<key>CFBundleSupportedPlatforms</key><array><string>MacOSX</string></array>
-	<key>CFBundleVersion</key><string>3</string>
+	<key>CFBundleVersion</key><string>$build_number</string>
 	<key>DTPlatformName</key><string>macosx</string>
 	<key>LSMinimumSystemVersion</key><string>13.0</string>
 	<key>NSExtension</key>
@@ -99,9 +111,15 @@ cat > "$stage/ext.entitlements" <<'PLIST'
 </plist>
 PLIST
 
-echo "signing (ad-hoc)…"
-codesign --force --sign - --entitlements "$stage/ext.entitlements" "$ext"
-codesign --force --sign - "$app"
+if [ "$sign_identity" = - ]; then
+  echo "signing (ad-hoc)…"
+  sign=(codesign --force --sign -)
+else
+  echo "signing as $sign_identity…"
+  sign=(codesign --force --options runtime --timestamp --sign "$sign_identity")
+fi
+"${sign[@]}" --entitlements "$stage/ext.entitlements" "$ext"
+"${sign[@]}" "$app"
 codesign --verify --deep --strict "$app"
 
 # Keep the previous install until the replacement has been built and verified.

@@ -15,4 +15,6 @@ jobs:
           app=finder/build/MergeFolders.app
           codesign --verify --deep --strict "$app"
           "$app/Contents/Resources/mergefolders" --help
+          "$app/Contents/Resources/mergefolders" --version
+          lipo -archs "$app/Contents/MacOS/MergeFolders" | grep -q 'x86_64 arm64'
           nm -u "$app/Contents/PlugIns/MergeFoldersExt.appex/Contents/MacOS/MergeFoldersExt" | grep _NSExtensionMain

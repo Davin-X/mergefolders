@@ -2,6 +2,7 @@
 # mergefolders — move the contents of several folders into one.
 #
 #   mergefolders [--to DIR] [--dry-run] [--keep] [--notify] ITEM...
+#   mergefolders --undo [LOG]
 #
 # Each directory's contents move into DIR preserving their paths inside that
 # directory, so same-named subfolders merge. A name clash is never overwritten:
@@ -9,29 +10,52 @@
 # unless --keep. Files passed directly are moved into DIR as well.
 set -u
 
+VERSION=0.3.0
 PROG=${0##*/}
+LOG_DIR=${MERGEFOLDERS_LOG_DIR:-$HOME/Library/Logs/MergeFolders}
 DEST=""
 DRY_RUN=0
 KEEP=0
 NOTIFY=0
+UNDO=0
 MOVED=0
 RENAMED=0
 FAILED=0
 SKIPPED=0
 LOCK=""
 LIST=""
-CLAIMED=""
+SHADOW=""
+JOURNAL=""
 
 cleanup() {
   [ -n "$LIST" ] && rm -f -- "$LIST"
+  [ -n "$SHADOW" ] && rm -rf -- "$SHADOW"
   [ -n "$LOCK" ] && rm -rf -- "$LOCK"
 }
 trap cleanup EXIT
 
 die() { printf '%s: %s\n' "$PROG" "$1" >&2; exit 1; }
 
+# Remove a lock only if its owner is gone. The .takeover mutex makes the
+# check-and-remove atomic, so two waiters cannot delete each other's new lock.
+take_stale_lock() {
+  local d=$1 pid
+  if ! mkdir "$d.takeover" 2>/dev/null; then
+    [ -z "$(find "$d.takeover" -prune -mmin +2 2>/dev/null)" ] || rmdir "$d.takeover" 2>/dev/null
+    return 0
+  fi
+  pid=$(cat "$d/pid" 2>/dev/null || true)
+  if [ -n "$pid" ]; then
+    kill -0 "$pid" 2>/dev/null || rm -rf -- "$d"
+  elif [ -n "$(find "$d" -prune -mmin +2 2>/dev/null)" ]; then
+    rm -rf -- "$d"  # owner died between mkdir and writing its pid
+  fi
+  rmdir "$d.takeover" 2>/dev/null
+  return 0
+}
+
 acquire_lock() {
-  local d pid
+  local d
   d="${TMPDIR:-/tmp}/mergefolders-lock-$(printf '%s' "$DEST" | shasum -a 256 | cut -c1-16)"
   for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do
     if mkdir "$d" 2>/dev/null; then
@@ -39,22 +63,74 @@ acquire_lock() {
       LOCK=$d
       return 0
     fi
-    # A merge killed with SIGKILL leaves its lock behind. Take it over once
-    # its owner is gone, so one crash cannot block the destination forever.
-    pid=$(cat "$d/pid" 2>/dev/null || true)
-    if [ -n "$pid" ]; then
-      kill -0 "$pid" 2>/dev/null || { rm -rf -- "$d"; continue; }
-    elif [ -n "$(find "$d" -prune -mmin +2 2>/dev/null)" ]; then
-      rm -rf -- "$d"; continue
-    fi
+    # A merge killed with SIGKILL leaves its lock behind; take it over.
+    take_stale_lock "$d"
+    mkdir "$d" 2>/dev/null && { printf '%s' $$ > "$d/pid"; LOCK=$d; return 0; }
     sleep 0.2
   done
   die "another merge is already running; try again shortly"
 }
 
+# Record a completed move so --undo can reverse it. NUL-separated: DEST, then src/target pairs.
+journal() {
+  local src=$1
+  case $src in /*) ;; *) src=$PWD/$src ;; esac
+  if [ -z "$JOURNAL" ]; then
+    if mkdir -p -- "$LOG_DIR" && JOURNAL=$(mktemp "$LOG_DIR/merge-$(date +%Y%m%d-%H%M%S)-XXXXXX"); then
+      printf '%s\0' "$DEST" >> "$JOURNAL"
+      printf 'undo log: %s\n' "$JOURNAL"
+    else
+      printf 'warning: cannot write the undo log in %s\n' "$LOG_DIR" >&2
+      JOURNAL=/dev/null
+    fi
+  fi
+  printf '%s\0%s\0' "$src" "$2" >> "$JOURNAL"
+}
+
+# shortcut: does not recreate empty source folders or .DS_Store the merge pruned; log them too if users ask.
+undo_last() {
+  local journal=${1-} item src target parent i
+  local -a rec=()
+  if [ -z "$journal" ]; then
+    # shellcheck disable=SC2010  # journal() names these files; ls -t sorts by sub-second mtime
+    journal=$(ls -t "$LOG_DIR"/merge-* 2>/dev/null | grep -v '\.undone$' | head -n 1)
+    [ -n "$journal" ] || die "no merge to undo"
+  fi
+  [ -f "$journal" ] || die "no such undo log (already undone?): $journal"
+  while IFS= read -r -d '' item; do rec+=("$item"); done < "$journal"
+  [ "${#rec[@]}" -ge 3 ] || die "the undo log is empty: $journal"
+  DEST=${rec[0]}
+  acquire_lock
+  i=$(( ${#rec[@]} - 2 ))
+  while [ "$i" -ge 1 ]; do
+    src=${rec[i]}; target=${rec[i+1]}
+    i=$((i - 2))
+    if [ -e "$src" ] || [ -L "$src" ]; then
+      printf 'failed (original path is in use): %s\n' "$src" >&2; FAILED=$((FAILED + 1)); continue
+    fi
+    if [ ! -e "$target" ] && [ ! -L "$target" ]; then
+      printf 'failed (no longer in the destination): %s\n' "$target" >&2; FAILED=$((FAILED + 1)); continue
+    fi
+    if mkdir -p -- "${src%/*}/" && mv -n -- "$target" "$src" && [ ! -e "$target" ] && [ ! -L "$target" ]; then
+      MOVED=$((MOVED + 1))
+      # Drop folders the merge created that are now empty; rmdir never removes content.
+      parent=${target%/*}
+      while [ "$parent" != "${DEST%/}" ] && [ "${parent#"${DEST%/}"/}" != "$parent" ] && rmdir -- "$parent" 2>/dev/null; do
+        parent=${parent%/*}
+      done
+    else
+      printf 'failed: %s\n' "$target" >&2; FAILED=$((FAILED + 1))
+    fi
+  done
+  mv -- "$journal" "$journal.undone"
+  printf 'restored %d · failed %d\n' "$MOVED" "$FAILED"
+  [ "$FAILED" -eq 0 ]
+}
+
 usage() {
   cat <<EOF
 Usage: $PROG [--to DIR] [--dry-run] [--keep] [--notify] ITEM...
+       $PROG --undo [LOG]
 
 Move the contents of each ITEM (folder or file) into DIR. Folders merge
 recursively: same-named subfolders combine, files keep their relative paths.
@@ -64,6 +140,8 @@ Existing names are never overwritten; the incoming item becomes "name (2).ext".
   --dry-run   print what would move; change nothing
   --keep      keep source folders even when empty
   --notify    show a macOS notification/dialog (used by the Finder app)
+  --undo      move the files from the last merge (or the given undo log) back
+  --version   print the version
 EOF
 }
 
@@ -74,12 +152,20 @@ while [ $# -gt 0 ]; do
     -n|--dry-run) DRY_RUN=1; shift ;;
     --keep) KEEP=1; shift ;;
     --notify) NOTIFY=1; shift ;;
+    --undo) UNDO=1; shift ;;
+    --version) printf '%s %s\n' "$PROG" "$VERSION"; exit 0 ;;
     -h|--help) usage; exit 0 ;;
     --) shift; break ;;
     -*) die "unknown option: $1" ;;
     *) break ;;
   esac
 done
+
+if [ "$UNDO" -eq 1 ]; then
+  [ $# -le 1 ] && [ "$DRY_RUN" -eq 0 ] && [ -z "$DEST" ] || die "--undo takes only an undo log path"
+  undo_last "${1-}"
+  exit
+fi
 
 [ $# -gt 0 ] || { usage >&2; exit 2; }
 
@@ -100,22 +186,14 @@ DEST=${DEST%.}
 
 if [ "$DRY_RUN" -eq 0 ]; then
   acquire_lock
+else
+  # Planned paths are mirrored here, so lookups stay fast and follow the
+  # filesystem's own case rules.
+  SHADOW=$(mktemp -d) || die "cannot create a temp folder"
 fi
 
 # "photo.jpg" -> "photo (2).jpg"; ".env" -> ".env (2)"; ".config.json" -> ".config (2).json"; "noext" -> "noext (2)"
-claimed() {
-  [ "$DRY_RUN" -eq 1 ] || return 1
-  local key
-  printf -v key '%q' "$1"
-  case "
-$CLAIMED
-" in
-    *"
-$key
-"*) return 0 ;;
-  esac
-  return 1
-}
+claimed() { [ -n "$SHADOW" ] && { [ -e "$SHADOW$1" ] || [ -L "$SHADOW$1" ]; }; }
 
 unique_path() {
   local p=$1 dir name base ext n=2 q
@@ -139,11 +217,11 @@ unique_path() {
 }
 
 move_item() {
-  local src=$1 rel=$2 target parent key
+  local src=$1 rel=$2 target parent
   target=${DEST%/}/$rel
   parent=${target%/*}
   while [ -n "$parent" ] && [ "$parent" != "$DEST" ]; do
-    if [ -L "$parent" ] || { [ -e "$parent" ] && [ ! -d "$parent" ]; } || claimed "$parent"; then
+    if [ -L "$parent" ] || { [ -e "$parent" ] && [ ! -d "$parent" ]; } || { [ -n "$SHADOW" ] && [ -f "$SHADOW$parent" ]; }; then
       printf 'failed: destination parent is not a plain directory: %s\n' "$parent" >&2
       FAILED=$((FAILED + 1))
       return
@@ -158,15 +236,15 @@ move_item() {
     RENAMED=$((RENAMED + 1))
   fi
   if [ "$DRY_RUN" -eq 1 ]; then
-    printf -v key '%q' "$target"
-    CLAIMED="${CLAIMED}${key}
-"
+    [ -d "$SHADOW${target%/*}" ] || mkdir -p -- "$SHADOW${target%/*}"
+    : > "$SHADOW$target"
     printf 'would move: %s -> %s\n' "$src" "$target"
     MOVED=$((MOVED + 1))
     return
   fi
   if mv -n -- "$src" "$target" && [ ! -e "$src" ] && [ ! -L "$src" ]; then
     MOVED=$((MOVED + 1))
+    journal "$src" "$target"
   else
     printf 'failed: %s\n' "$src" >&2
     FAILED=$((FAILED + 1))
@@ -202,7 +280,12 @@ for arg in "$@"; do
     # `find` walks it makes BSD find skip siblings.
     list=$(mktemp) || die "cannot create a temp file"
     LIST=$list
-    find "$src" -name .DS_Store -prune -o \( -type f -o -type l \) -print0 > "$list" || die "cannot list all files in $src"
+    if ! find "$src" -name .DS_Store -prune -o \( -type f -o -type l \) -print0 > "$list"; then
+      printf 'failed: cannot list all files in %s; left it untouched\n' "$arg" >&2
+      FAILED=$((FAILED + 1))
+      rm -f -- "$list"
+      continue
+    fi
     while IFS= read -r -d '' file; do
       move_item "$file" "${file#"$src"/}"
     done < "$list"

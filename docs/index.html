@@ -76,7 +76,7 @@ ls "$demo/Merged"</code></pre>
 </div></section>
 <section class="chapter" id="questions"><h2>Common questions</h2><div>
 <details><summary>Where is the Finder menu?</summary><p>Open MergeFolders from Applications and click Open Finder Extensions. Enable Merge Folders, reopen the Finder window, then right-click selected items.</p></details>
-<details><summary>Can I undo a merge?</summary><p>There’s no built-in undo. Use Preview and keep a backup of important files. If a merge fails partway, completed moves stay in place. Check the output and preview the remaining sources before retrying.</p></details>
+<details><summary>Can I undo a merge?</summary><p>Yes. After a merge, click <strong>Undo Merge</strong>, or run <code>mergefolders --undo</code> in Terminal. Each file moves back to where it was, including after a cancelled or partly failed merge. Files you deleted or replaced since the merge are reported and left alone. Preview first and keep a backup of important files.</p></details>
 <details><summary>What about links or cloud files?</summary><p>Download cloud-only files first. Symbolic links move as links. A relative link can resolve differently in its new location.</p></details>
 <details><summary>How do I update or uninstall?</summary><p>To update, download the new source and rerun your installer. To uninstall, disable the Finder extension, quit Merge Folders, and run:</p>
 <pre><code>pluginkit -r "/Applications/MergeFolders.app/Contents/PlugIns/MergeFoldersExt.appex"</code></pre><p>Move MergeFolders.app to the Trash. Remove the CLI with <code>rm -i "$HOME/bin/mergefolders"</code>.</p></details>

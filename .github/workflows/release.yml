@@ -1,0 +1,88 @@
+name: release
+
+# Push a tag like v0.3.0 (it must match VERSION= in mergefolders).
+# Without Apple secrets the app is ad-hoc signed; with them it is signed with
+# Developer ID and notarized, and a Homebrew cask is generated too.
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: macos-latest
+    env:
+      MACOS_CERT_P12: ${{ secrets.MACOS_CERT_P12 }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Tag matches the version in mergefolders
+        run: |
+          version=$(sed -n 's/^VERSION=//p' mergefolders)
+          [ "v$version" = "$GITHUB_REF_NAME" ] || { echo "::error::tag $GITHUB_REF_NAME does not match VERSION=$version"; exit 1; }
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+
+      - name: Shell tests
+        run: bash tests/test_mergefolders.sh
+
+      - name: Import Developer ID certificate
+        if: env.MACOS_CERT_P12 != ''
+        env:
+          MACOS_CERT_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
+        run: |
+          kc="$RUNNER_TEMP/build.keychain"
+          pw=$(uuidgen)
+          security create-keychain -p "$pw" "$kc"
+          security set-keychain-settings -lut 3600 "$kc"
+          security unlock-keychain -p "$pw" "$kc"
+          printf '%s' "$MACOS_CERT_P12" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          security import "$RUNNER_TEMP/cert.p12" -k "$kc" -P "$MACOS_CERT_PASSWORD" -T /usr/bin/codesign
+          rm -f "$RUNNER_TEMP/cert.p12"
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$pw" "$kc" >/dev/null
+          security list-keychains -d user -s "$kc" $(security list-keychains -d user | tr -d '"')
+          identity=$(security find-identity -v -p codesigning "$kc" | sed -n 's/.*"\(Developer ID Application:.*\)"/\1/p' | head -n 1)
+          [ -n "$identity" ] || { echo "::error::no Developer ID Application identity in MACOS_CERT_P12"; exit 1; }
+          echo "SIGN_IDENTITY=$identity" >> "$GITHUB_ENV"
+
+      - name: Build universal app
+        run: |
+          bash finder/build.sh --build-only
+          app=finder/build/MergeFolders.app
+          codesign --verify --deep --strict "$app"
+          lipo -archs "$app/Contents/MacOS/MergeFolders" | grep -q 'x86_64 arm64'
+
+      - name: Notarize
+        if: env.MACOS_CERT_P12 != ''
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+        run: |
+          ditto -c -k --keepParent finder/build/MergeFolders.app "$RUNNER_TEMP/notarize.zip"
+          xcrun notarytool submit "$RUNNER_TEMP/notarize.zip" --apple-id "$APPLE_ID" \
+            --team-id "$APPLE_TEAM_ID" --password "$APPLE_APP_PASSWORD" --wait
+          xcrun stapler staple finder/build/MergeFolders.app
+          spctl --assess --type execute finder/build/MergeFolders.app
+
+      - name: Package release files
+        run: |
+          mkdir dist
+          ditto -c -k --keepParent finder/build/MergeFolders.app "dist/MergeFolders-$VERSION.zip"
+          cp mergefolders dist/mergefolders
+          app_sha=$(shasum -a 256 "dist/MergeFolders-$VERSION.zip" | cut -d' ' -f1)
+          cli_sha=$(shasum -a 256 dist/mergefolders | cut -d' ' -f1)
+          base="https://github.com/$GITHUB_REPOSITORY/releases/download/v$VERSION"
+          sed -e "s|@VERSION@|$VERSION|g" -e "s|@URL@|$base/mergefolders|g" -e "s|@SHA256@|$cli_sha|g" \
+            packaging/mergefolders.rb > dist/mergefolders.rb
+          if [ -n "$MACOS_CERT_P12" ]; then
+            sed -e "s|@VERSION@|$VERSION|g" -e "s|@SHA256@|$app_sha|g" -e "s|@REPO@|$GITHUB_REPOSITORY|g" \
+              packaging/mergefolders-app.rb > dist/mergefolders-app.rb
+          fi
+          (cd dist && shasum -a 256 * > SHA256SUMS)
+
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" dist/* --verify-tag --generate-notes --title "Merge Folders $VERSION"
