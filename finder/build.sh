@@ -128,4 +128,5 @@ if [ "${1-}" = --build-only ]; then exit 0; fi
 lsregister=/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister
 "$lsregister" -f "$target"
 pluginkit -a "$target/Contents/PlugIns/MergeFoldersExt.appex"
-echo "Enable Merge Folders in System Settings under Finder Extensions."
+pluginkit -e use -i "$ext_id" || true
+echo "If Merge Folders is not yet enabled, turn it on in System Settings under Finder Extensions."

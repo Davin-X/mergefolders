@@ -15,8 +15,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let selectionText = NSTextView()
     private var previewButton: NSButton!
     private var mergeButton: NSButton!
+    private var cancelButton: NSButton!
     private var statusLabel: NSTextField!
     private var spinner: NSProgressIndicator!
+    private var activeProcess: Process?
+    private var cancelled = false
 
     private static let logURL = FileManager.default
         .homeDirectoryForCurrentUser
@@ -54,9 +57,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             buildMergeWindow()
         }
         window.center()
+        NSApp.activate(ignoringOtherApps: true)
         window.makeKeyAndOrderFront(nil)
         if !sources.isEmpty { Self.appendLog("Opened merge window for \(sources.count) selected items.\n") }
-        NSApp.activate(ignoringOtherApps: true)
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
@@ -132,7 +135,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         text.isEditable = false
         text.drawsBackground = false
         text.font = .monospacedSystemFont(ofSize: 11, weight: .regular)
-        text.string = sources.map(\.path).joined(separator: "\n")
+        text.string = formattedSources()
         scroll.documentView = text
 
         statusLabel = NSTextField(wrappingLabelWithString: "Preview the planned moves or merge now. Files with matching names are kept with a numbered suffix.")
@@ -143,6 +146,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         spinner.style = .spinning
         spinner.isDisplayedWhenStopped = false
         add(spinner, frame: NSRect(x: 20, y: 20, width: 20, height: 20))
+
+        cancelButton = NSButton(title: "Cancel", target: self, action: #selector(cancel))
+        cancelButton.bezelStyle = .rounded
+        cancelButton.keyEquivalent = "\u{1b}"
+        add(cancelButton, frame: NSRect(x: 140, y: 14, width: 110, height: 32))
 
         previewButton = NSButton(title: "Preview", target: self, action: #selector(preview))
         previewButton.bezelStyle = .rounded
@@ -193,7 +201,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard panel.runModal() == .OK, let url = panel.url else { return }
 
         destination = url
-        selectionText.string = sources.map(\.path).joined(separator: "\n")
+        selectionText.string = formattedSources()
         statusLabel.stringValue = "Preview the planned moves or merge now."
         statusLabel.textColor = .secondaryLabelColor
         previewButton.isEnabled = true
@@ -202,11 +210,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         mergeButton.isEnabled = true
     }
 
+    private func formattedSources() -> String {
+        sources.enumerated()
+            .map { "\($0.offset + 1). \($0.element.path)" }
+            .joined(separator: "\n\n")
+    }
+
     @objc private func openDestination() {
         if let destination { NSWorkspace.shared.open(destination) }
     }
 
     @objc private func closeWindow() { window.close() }
+
+    @objc private func cancel() {
+        if let process = activeProcess, process.isRunning {
+            cancelled = true
+            cancelButton.isEnabled = false
+            statusLabel.stringValue = "Cancelling…"
+            process.terminate()
+        } else {
+            window.close()
+        }
+    }
 
     @objc private func preview() { runMerge(preview: true) }
 
@@ -219,6 +244,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
+        cancelled = false
         mergeButton.isEnabled = false
         previewButton.isEnabled = false
         chooseButton.isEnabled = false
@@ -234,6 +260,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             process.arguments = arguments
             process.standardOutput = pipe
             process.standardError = pipe
+            DispatchQueue.main.sync { self.activeProcess = process }
 
             let output: String
             let failed: Bool
@@ -253,7 +280,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
 
             DispatchQueue.main.async {
+                self.activeProcess = nil
                 self.spinner.stopAnimation(nil)
+                let wasCancelled = self.cancelled
                 if !preview && !failed {
                     self.chooseButton.title = "Open Folder"
                     self.chooseButton.action = #selector(self.openDestination)
@@ -262,16 +291,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     self.mergeButton.action = #selector(self.closeWindow)
                     self.previewButton.keyEquivalent = ""
                     self.mergeButton.keyEquivalent = "\r"
+                    self.cancelButton.isHidden = true
                 }
                 self.chooseButton.isEnabled = true
+                self.cancelButton.isEnabled = true
                 self.previewButton.isEnabled = preview || failed
                 self.mergeButton.isEnabled = true
-                self.selectionText.string = output
+                self.selectionText.string = wasCancelled
+                    ? "Cancelled. Files already moved remain in the destination."
+                    : output
                 self.selectionText.scrollToBeginningOfDocument(nil)
-                self.statusLabel.textColor = failed ? .systemRed : .labelColor
-                self.statusLabel.stringValue = output.isEmpty
-                    ? (failed ? "The merge failed." : "Done.")
-                    : (output.components(separatedBy: "\n").last ?? output)
+                if wasCancelled {
+                    self.statusLabel.textColor = .secondaryLabelColor
+                    self.statusLabel.stringValue = "Cancelled."
+                } else {
+                    self.statusLabel.textColor = failed ? .systemRed : .labelColor
+                    self.statusLabel.stringValue = output.isEmpty
+                        ? (failed ? "The merge failed." : "Done.")
+                        : (output.components(separatedBy: "\n").last ?? output)
+                }
             }
         }
     }
