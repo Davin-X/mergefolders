@@ -20,6 +20,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var spinner: NSProgressIndicator!
     private var activeProcess: Process?
     private var cancelled = false
+    /// The script's log for the merge this window ran; Undo reverses exactly that one.
+    private var undoLog: String?
 
     private static let logURL = FileManager.default
         .homeDirectoryForCurrentUser
@@ -105,6 +107,46 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let button = NSButton(title: "Open Finder Extensions…", target: self, action: #selector(openExtensions))
         button.bezelStyle = .rounded
         add(button, frame: NSRect(x: 20, y: 40, width: 200, height: 32))
+
+        let version = NSTextField(labelWithString: "Version \(Self.currentVersion)")
+        version.textColor = .secondaryLabelColor
+        add(version, frame: NSRect(x: 240, y: 46, width: 240, height: 20))
+        checkForUpdate(label: version)
+    }
+
+    private static var currentVersion: String {
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0"
+    }
+
+    /// Asks GitHub for the latest release once, when the app is opened by hand,
+    /// and offers a download link if it is newer. Merge windows never phone home.
+    private func checkForUpdate(label: NSTextField) {
+        guard let api = URL(string: "https://api.github.com/repos/Davin-X/mergefolders/releases/latest") else { return }
+        var request = URLRequest(url: api, timeoutInterval: 10)
+        request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
+        URLSession.shared.dataTask(with: request) { data, _, _ in
+            guard let data,
+                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let tag = json["tag_name"] as? String,
+                  let page = (json["html_url"] as? String).flatMap(URL.init(string:)),
+                  page.host == "github.com" else { return }
+            let latest = tag.hasPrefix("v") ? String(tag.dropFirst()) : tag
+            guard latest.compare(Self.currentVersion, options: .numeric) == .orderedDescending else { return }
+            DispatchQueue.main.async {
+                self.releaseURL = page
+                label.stringValue = "Version \(latest) is available."
+                label.textColor = .labelColor
+                let get = NSButton(title: "Download…", target: self, action: #selector(self.openRelease))
+                get.bezelStyle = .rounded
+                self.add(get, frame: NSRect(x: 370, y: 10, width: 110, height: 32))
+            }
+        }.resume()
+    }
+
+    private var releaseURL: URL?
+
+    @objc private func openRelease() {
+        if let releaseURL { NSWorkspace.shared.open(releaseURL) }
     }
 
     private func buildMergeWindow() {
@@ -233,11 +275,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    @objc private func preview() { runMerge(preview: true) }
+    private enum Mode { case preview, merge, undo }
 
-    @objc private func merge() { runMerge(preview: false) }
+    @objc private func preview() { run(.preview) }
 
-    private func runMerge(preview: Bool) {
+    @objc private func merge() { run(.merge) }
+
+    @objc private func undo() { run(.undo) }
+
+    private func run(_ mode: Mode) {
+        let preview = mode == .preview
         guard let destination, !sources.isEmpty else { return }
         guard let script = Bundle.main.url(forResource: "mergefolders", withExtension: nil) else {
             statusLabel.stringValue = "This copy of Merge Folders is damaged: the mergefolders script is missing."
@@ -245,14 +292,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         cancelled = false
+        cancelButton.isEnabled = mode != .undo
         mergeButton.isEnabled = false
         previewButton.isEnabled = false
         chooseButton.isEnabled = false
         spinner.startAnimation(nil)
         statusLabel.textColor = .secondaryLabelColor
-        statusLabel.stringValue = preview ? "Preparing preview…" : "Merging…"
+        statusLabel.stringValue = ["Preparing preview…", "Merging…", "Putting files back…"][[Mode.preview, .merge, .undo].firstIndex(of: mode)!]
 
-        let arguments = (preview ? ["--dry-run"] : []) + ["--to", destination.path] + sources.map(\.path)
+        let arguments = mode == .undo
+            ? ["--undo", undoLog!]
+            : (preview ? ["--dry-run"] : []) + ["--to", destination.path] + sources.map(\.path)
         DispatchQueue.global(qos: .userInitiated).async {
             let process = Process()
             let pipe = Pipe()
@@ -283,7 +333,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self.activeProcess = nil
                 self.spinner.stopAnimation(nil)
                 let wasCancelled = self.cancelled
-                if !preview && !failed {
+                if mode == .merge {
+                    let prefix = "undo log: "
+                    self.undoLog = output.components(separatedBy: "\n")
+                        .first { $0.hasPrefix(prefix) }
+                        .map { String($0.dropFirst(prefix.count)) }
+                }
+                // A merge that moved anything, even one that failed or was cancelled, ends here.
+                let finished = mode == .undo || (mode == .merge && (!failed || self.undoLog != nil))
+                if finished {
                     self.chooseButton.title = "Open Folder"
                     self.chooseButton.action = #selector(self.openDestination)
                     // The merge is finished: the only remaining step is closing.
@@ -291,15 +349,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     self.mergeButton.action = #selector(self.closeWindow)
                     self.previewButton.keyEquivalent = ""
                     self.mergeButton.keyEquivalent = "\r"
-                    self.cancelButton.isHidden = true
+                    // One undo per merge; after it, only closing is left.
+                    self.cancelButton.title = "Undo Merge"
+                    self.cancelButton.action = #selector(self.undo)
+                    self.cancelButton.isHidden = mode == .undo || self.undoLog == nil
                 }
                 self.chooseButton.isEnabled = true
                 self.cancelButton.isEnabled = true
-                self.previewButton.isEnabled = preview || failed
+                self.previewButton.isEnabled = !finished && (preview || failed)
                 self.mergeButton.isEnabled = true
                 self.selectionText.string = wasCancelled
                     ? "Cancelled. Files already moved remain in the destination."
-                    : output
+                        + (self.undoLog == nil ? "" : " Click Undo Merge to put them back.")
+                    // The log path is for the Undo button, not for reading.
+                    : output.components(separatedBy: "\n").filter { !$0.hasPrefix("undo log: ") }.joined(separator: "\n")
                 self.selectionText.scrollToBeginningOfDocument(nil)
                 if wasCancelled {
                     self.statusLabel.textColor = .secondaryLabelColor
