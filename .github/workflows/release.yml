@@ -74,7 +74,7 @@ jobs:
           app_sha=$(shasum -a 256 "dist/MergeFolders-$VERSION.zip" | cut -d' ' -f1)
           cli_sha=$(shasum -a 256 dist/mergefolders | cut -d' ' -f1)
           base="https://github.com/$GITHUB_REPOSITORY/releases/download/v$VERSION"
-          sed -e "s|@VERSION@|$VERSION|g" -e "s|@URL@|$base/mergefolders|g" -e "s|@SHA256@|$cli_sha|g" \
+          sed -e '/^#/d' -e "s|@VERSION@|$VERSION|g" -e "s|@URL@|$base/mergefolders|g" -e "s|@SHA256@|$cli_sha|g" \
             packaging/mergefolders.rb > dist/mergefolders.rb
           if [ -n "$MACOS_CERT_P12" ]; then
             sed -e "s|@VERSION@|$VERSION|g" -e "s|@SHA256@|$app_sha|g" -e "s|@REPO@|$GITHUB_REPOSITORY|g" \
