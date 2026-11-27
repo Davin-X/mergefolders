@@ -28,7 +28,7 @@
 <main id="main">
 <section class="hero"><div><p class="kicker">An open-source macOS utility</p>
 <h1>Many folders.<br>One <em>home.</em></h1>
-<p>Bring folders together from Finder or Terminal. Preview each move and keep both files when names match.</p>
+<p>Bring folders together from Finder or Terminal. Preview each move, keep both files when names match, and undo with one click.</p>
 <a class="button" href="#install">Install Merge Folders <span aria-hidden="true">↓</span></a></div>
 <fieldset class="demo"><legend>Example merge</legend>
 <input id="before" type="radio" name="view" checked><label for="before">Before</label>
@@ -46,8 +46,8 @@
 <pre><code>brew install Davin-X/tap/mergefolders</code></pre>
 <h3>From source</h3><p>Download and unzip the source. In Terminal, type <code>cd</code> followed by a space, drag the extracted folder into the window, and press Return. Building the Finder app needs write access to <code>/Applications</code> and Apple’s Command Line Tools (<code>xcode-select --install</code>).</p>
 <a class="download" href="mergefolders-source.zip" download>Download source ZIP ↓</a>
-<pre><code>./install.sh              # Finder and Terminal
-./install.sh --cli-only   # Terminal only</code></pre>
+<pre><code>./install.sh             # Finder + CLI
+./install.sh --cli-only  # CLI only</code></pre>
 </div></section>
 <section class="chapter" id="finder"><h2>Use Finder</h2><div>
 <ol><li><strong>Enable the menu.</strong> In System Settings, search for Extensions. Enable Merge Folders under Finder Extensions.</li>
@@ -63,18 +63,19 @@
 </div></section>
 <section class="chapter" id="terminal"><h2>Try Terminal</h2><div>
 <h3>1. Preview with sample files</h3>
-<p>Paste this into Terminal to create two disposable <code>note.txt</code> files and preview their destinations.</p>
+<p>Paste this into Terminal to create two disposable <code>note.txt</code> files and preview their destinations. If Terminal says <code>command not found</code>, run <code>export PATH="$HOME/bin:$PATH"</code> first.</p>
 <pre><code>demo=$(mktemp -d)
 mkdir -p "$demo/First" "$demo/Second" "$demo/Merged"
 printf 'first copy\n' &gt; "$demo/First/note.txt"
 printf 'second copy\n' &gt; "$demo/Second/note.txt"
-~/bin/mergefolders --dry-run --to "$demo/Merged" \
+mergefolders --dry-run --to "$demo/Merged" \
   "$demo/First" "$demo/Second"</code></pre>
 <h3>2. Run the merge</h3>
 <p>Perform the moves and list the merged folder:</p>
-<pre><code>~/bin/mergefolders --to "$demo/Merged" \
+<pre><code>mergefolders --to "$demo/Merged" \
   "$demo/First" "$demo/Second"
-ls "$demo/Merged"</code></pre>
+ls "$demo/Merged"
+mergefolders --undo   # put them back</code></pre>
 <p>Output shows <code>note.txt</code> and <code>note (2).txt</code>. Use <code>--keep</code> to keep empty source folders, or <code>--help</code> for all options.</p>
 </div></section>
 <section class="chapter" id="questions"><h2>Common questions</h2><div>
@@ -82,7 +83,7 @@ ls "$demo/Merged"</code></pre>
 <details><summary>Can I undo a merge?</summary><p>Yes. After a merge, click <strong>Undo Merge</strong>, or run <code>mergefolders --undo</code> in Terminal. Each file moves back to where it was, including after a cancelled or partly failed merge. Files you deleted or replaced since the merge are reported and left alone. Preview first and keep a backup of important files.</p></details>
 <details><summary>What about links or cloud files?</summary><p>Download cloud-only files first. Symbolic links move as links. A relative link can resolve differently in its new location.</p></details>
 <details><summary>How do I update or uninstall?</summary><p>Opening the app from Applications tells you when a newer release exists. To update, replace the app with the one from the <a href="https://github.com/Davin-X/mergefolders/releases/latest">latest release</a>, run <code>brew upgrade mergefolders</code>, or rerun the installer from new source. To uninstall, disable the Finder extension, quit Merge Folders, and run:</p>
-<pre><code>pluginkit -r "/Applications/MergeFolders.app/Contents/PlugIns/MergeFoldersExt.appex"</code></pre><p>Move MergeFolders.app to the Trash. Remove the CLI with <code>rm -i "$HOME/bin/mergefolders"</code>.</p></details>
+<pre><code>pluginkit -r "/Applications/MergeFolders.app/Contents/PlugIns/MergeFoldersExt.appex"</code></pre><p>Move MergeFolders.app to the Trash. Remove the CLI with <code>brew uninstall mergefolders</code>, or <code>rm -i "$HOME/bin/mergefolders"</code> if you installed it another way.</p></details>
 </div></section>
 </main><footer><span>Merge Folders for macOS</span><span><a href="https://github.com/Davin-X/mergefolders">Source</a> · <a href="https://github.com/Davin-X/mergefolders/blob/main/LICENSE">MIT licensed</a> · <a href="https://github.com/Davin-X/mergefolders/issues">Report an issue</a></span></footer>
 </body></html>

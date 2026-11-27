@@ -1,130 +1,175 @@
 <p align="center"><img src="docs/assets/icon.png" width="100" alt="Merge Folders icon"></p>
 
-# Merge Folders for macOS
+<h1 align="center">Merge Folders for macOS</h1>
 
-Combine folders from Finder or Terminal. If two folders contain `Trips/beach.jpg`, the first photo keeps its name and the incoming photo becomes `Trips/beach (2).jpg`. The app **moves** the originals. Use Preview in Finder or the Terminal example below to see the planned moves before changing your files.
+<p align="center">
+Combine folders from Finder or Terminal without losing a single file.<br>
+<a href="https://github.com/Davin-X/mergefolders/releases/latest"><img src="https://img.shields.io/github/v/release/Davin-X/mergefolders?label=Download" alt="Latest release"></a>
+<img src="https://img.shields.io/badge/macOS-13%2B-blue" alt="macOS 13 or later">
+<a href="LICENSE"><img src="https://img.shields.io/github/license/Davin-X/mergefolders" alt="MIT license"></a>
+</p>
 
-[![Latest release](https://img.shields.io/github/v/release/Davin-X/mergefolders?label=Download)](https://github.com/Davin-X/mergefolders/releases/latest)
+<p align="center">
+<a href="https://davin-x.github.io/mergefolders/">Illustrated guide</a> ·
+<a href="#install">Install</a> ·
+<a href="#merge-from-finder">Finder</a> ·
+<a href="#merge-from-terminal">Terminal</a> ·
+<a href="#what-happens-to-my-files">Safety</a> ·
+<a href="#update-or-uninstall">Uninstall</a>
+</p>
 
-[Illustrated guide](https://davin-x.github.io/mergefolders/) · [Installation](#install) · [Finder walkthrough](#merge-from-finder) · [Terminal quick start](#try-the-cli-with-sample-files) · [File handling](#what-happens-to-my-files) · [Uninstall](#update-or-uninstall)
+Finder's own merge keeps only one of two files that share a name. Merge Folders keeps both: if two folders contain `Trips/beach.jpg`, the first keeps its name and the second becomes `Trips/beach (2).jpg`.
+
+- **Nothing is overwritten.** Same-named files get a numbered suffix; same-named subfolders combine.
+- **Preview first.** See every planned move before anything changes.
+- **Undo.** Every merge is logged and can be moved back with one click.
+- **Safe to cancel.** The file in flight finishes and is logged, so Undo still restores everything.
+
+Files are **moved**, not copied, so the source folders end up empty and are removed.
 
 ## Install
 
-Merge Folders requires macOS 13 or later and runs on Apple silicon and Intel Macs.
+Requires macOS 13 or later, on Apple silicon or Intel.
 
-**Ready-made app (Finder menu and Terminal command).** Download `MergeFolders-<version>.zip` from the [latest release](https://github.com/Davin-X/mergefolders/releases/latest), unzip it, and move **MergeFolders.app** to Applications. Open it once, then follow [Merge from Finder](#merge-from-finder). If macOS says the app cannot be verified, open **System Settings → Privacy & Security** and click **Open Anyway**. Releases signed with a Developer ID open without this step. The Terminal command is inside the app; to use it, run `ln -s /Applications/MergeFolders.app/Contents/Resources/mergefolders ~/bin/mergefolders`.
+| You want | Do this |
+| --- | --- |
+| **Finder menu** (and Terminal) | Download `MergeFolders-<version>.zip` from the [latest release](https://github.com/Davin-X/mergefolders/releases/latest), unzip it, move **MergeFolders.app** to Applications, and open it once. |
+| **Terminal only** | `brew install Davin-X/tap/mergefolders` |
+| **Build it yourself** | See [From source](#from-source). |
 
-**Homebrew (Terminal command).** Run `brew install Davin-X/tap/mergefolders`.
+The app is not notarized yet. If macOS says it cannot be verified, open **System Settings → Privacy & Security** and click **Open Anyway**.
 
-**From source.** Download the source ZIP from the [latest release](https://github.com/Davin-X/mergefolders/releases/latest), or use **Code → Download ZIP** on the repository page, and unzip it. In Terminal, type `cd ` (including the space), drag the extracted folder into the window, press Return, then choose:
+To also use the app's Terminal command, link it into `~/bin`:
 
-| What you want | Run in Terminal | Installed location |
-| --- | --- | --- |
-| Finder menu and Terminal command | `./install.sh` | `/Applications/MergeFolders.app` and `~/bin/mergefolders` |
-| Terminal command only | `./install.sh --cli-only` | `~/bin/mergefolders` |
+```sh
+mkdir -p ~/bin && ln -s /Applications/MergeFolders.app/Contents/Resources/mergefolders ~/bin/mergefolders
+```
 
-Building the Finder app needs write access to `/Applications` and Apple’s Command Line Tools. To install the tools, run `xcode-select --install`, finish the Apple installer, then run `./install.sh`. The CLI-only option uses the Bash and file utilities included with macOS and skips compilation.
+If Terminal then says `command not found: mergefolders`, add `~/bin` to your PATH once and open a new window:
 
-Run `mergefolders --version`, or open the app, to see which version you have.
+```sh
+echo 'export PATH="$HOME/bin:$PATH"' >> ~/.zprofile
+```
+
+Check your version with `mergefolders --version`, or open the app.
 
 ## Merge from Finder
 
-1. Open **System Settings**, search for **Extensions**, find **Finder Extensions**, and enable **Merge Folders**. The settings location varies by macOS version.
-2. In a Finder window, Command-click the source folders or files. Right-click the selection and choose **Merge Folders…**.
+1. **Turn on the menu.** Open **System Settings**, search for **Extensions**, open **Finder Extensions**, and switch on **Merge Folders**. (The app's **Open Finder Extensions…** button goes straight there.)
+2. **Select the folders.** Command-click the source folders in Finder, right-click, and choose **Merge Folders…**.
 
    <img src="docs/assets/finder-menu-guide.png" width="500" alt="Finder context menu with Merge Folders highlighted near the bottom.">
 
-3. **Choose the destination.** Check that Camera and Phone are both listed. Click **Choose…** and select or create the Album folder.
+3. **Choose the destination.** Check that both folders are listed, click **Choose…**, and pick or create the destination folder.
 
    <img src="docs/assets/merge-choose.png" width="500" alt="Merge Folders lists Camera and Phone. Choose is available, and Preview and Merge are disabled until a destination is selected.">
 
-4. **Preview the names.** Click **Preview**. The last planned path ends in `beach (2).jpg`, so both photos will be kept. The dry run leaves the sources in place.
+4. **Preview.** Click **Preview** to see where each file will go. Here the second `beach.jpg` will become `beach (2).jpg`. Nothing moves yet.
 
    <img src="docs/assets/merge-preview.png" width="500" alt="Preview lists two planned moves into Album and shows the second photo becoming beach (2).jpg.">
 
-5. **Merge and inspect the result.** Click **Merge**. In this example the summary reports two files moved, one renamed, and zero failures. Click **Open Folder** to see both photos, **Undo Merge** to put every file back where it was, or **Done** to close the window.
+5. **Merge.** Click **Merge**. The summary shows what moved, what was renamed, and any failures. Then click **Open Folder** to see the result, **Undo Merge** to put everything back, or **Done**.
 
    <img src="docs/assets/merge-result.png" width="500" alt="Completed merge with Open Folder, Undo Merge, and Done buttons, and a summary of two moved, one renamed, zero skipped, and zero failed.">
 
-If the menu is missing, open **MergeFolders** from Applications, use **Open Finder Extensions…**, and check the switch. Reopen the Finder window after enabling it.
+Menu missing? Make sure the extension is switched on, then close and reopen the Finder window.
 
-## Try the CLI with sample files
+## Merge from Terminal
 
-Paste this into Terminal. It creates a fresh practice folder with two files of the same name and previews the merge.
+Try it on throwaway files first. This creates two folders that each hold a `note.txt` and previews the merge:
 
 ```sh
 demo=$(mktemp -d)
 mkdir -p "$demo/First" "$demo/Second" "$demo/Merged"
 printf 'first copy\n' > "$demo/First/note.txt"
 printf 'second copy\n' > "$demo/Second/note.txt"
-~/bin/mergefolders --dry-run --to "$demo/Merged" "$demo/First" "$demo/Second"
+mergefolders --dry-run --to "$demo/Merged" "$demo/First" "$demo/Second"
 ```
 
-To perform the merge and see both files, run these commands in the same Terminal window.
+Now merge for real and look at the result:
 
 ```sh
-~/bin/mergefolders --to "$demo/Merged" "$demo/First" "$demo/Second"
-ls "$demo/Merged"
+mergefolders --to "$demo/Merged" "$demo/First" "$demo/Second"
+ls "$demo/Merged"        # note.txt  note (2).txt
+mergefolders --undo      # and put them back
 ```
 
-The destination now contains `note.txt` and `note (2).txt`. For your own files, replace the three folder paths. Put paths containing spaces in quotes. You can also drag folders from Finder into Terminal to enter their paths.
+For your own files, swap in your folder paths. Quote paths with spaces, or drag folders from Finder into Terminal.
 
-| Option | Use |
+| Option | What it does |
 | --- | --- |
-| `--to DIR` | Merge into an existing directory. Omit this option to choose one in a dialog. |
-| `--dry-run`, `-n` | Preview planned file moves and names. |
-| `--keep` | Leave the source directory structure in place after moving its files. |
-| `--notify` | Display a macOS notification on completion or a dialog on failure. |
-| `--undo [LOG]` | Move the files from the last merge back. Pass the `undo log:` path a merge printed to undo that merge specifically. |
-| `--version` | Print the version and exit. |
-| `--help` | Print usage and exit. |
+| `--to DIR` | Merge into this folder. Without it, a dialog asks. |
+| `--dry-run`, `-n` | Show the planned moves; change nothing. |
+| `--keep` | Keep the emptied source folders. |
+| `--notify` | Show a macOS notification when done, or a dialog on failure. |
+| `--undo [LOG]` | Move the last merge back, or the merge recorded in `LOG` (the `undo log:` path a merge prints). |
+| `--version`, `--help` | Print the version or usage. |
 
 ## What happens to my files?
 
-- Files retain their relative paths. Same-named subdirectories combine. A naming conflict adds the first available suffix, starting at ` (2)`, before the last extension.
-- Selected symbolic links move as links. Relative links keep their stored target text, so moving one can change where it resolves. A symlink beneath the destination cannot serve as a parent for incoming files.
-- Empty source directories are pruned after a move unless you use `--keep`. Empty directories are not created in the destination. Finder’s `.DS_Store` files inside sources are skipped.
-- You can select the destination as one of the source folders. The tool skips it. A destination nested inside another source is rejected.
-- Every merge records its moves in `~/Library/Logs/MergeFolders/` and prints the log path. `mergefolders --undo` (or **Undo Merge** in the app) moves each file back to its original path and removes folders the merge created in the destination once they are empty. Files that were since deleted, or whose original path is now taken, are reported and left alone; free the path and run the same undo again to retry. Finder’s `.DS_Store` files removed from the sources are not recreated. Logs older than 90 days are deleted.
-- A merge performs individual moves. If it stops partway, completed moves stay in place and can be undone the same way. A source that cannot be fully listed is left untouched, and the rest still merge. Keep a backup when merging important files.
-- Download cloud-only files before merging. For a Finder merge, diagnostic output is saved to `~/Library/Logs/MergeFolders.log`.
+**Naming.** Files keep their paths relative to the source folder, and same-named subfolders combine. On a clash the incoming file gets the first free suffix, starting at ` (2)`, before the extension: `beach (2).jpg`, `beach (3).jpg`.
+
+**Folders.** Empty folders move too. Sources left empty after the merge are removed, unless you use `--keep`. Finder's hidden `.DS_Store` files are skipped.
+
+**Undo.** Each merge is logged in `~/Library/Logs/MergeFolders/`. **Undo Merge** or `mergefolders --undo` moves every file back and removes folders the merge created, once they are empty. A file that was since deleted, or whose old path is now taken, is reported and left alone; free the path and run the same undo again. Logs older than 90 days are deleted.
+
+**Stopping partway.** Moves happen one at a time. If a merge stops or you cancel it, finished moves stay in place and can still be undone. A source that cannot be fully read is left untouched while the others merge.
+
+**Edge cases.**
+- The destination may be one of the selected folders; it is skipped as a source. A destination *inside* a source is refused.
+- Symbolic links move as links. A relative link keeps its text, so it may point somewhere else after the move.
+- Cloud-only files (iCloud, Dropbox) must be downloaded first.
+- Keep a backup of anything irreplaceable.
+
+Finder merges write diagnostics to `~/Library/Logs/MergeFolders.log`.
 
 ## Update or uninstall
 
-To update, use the method you installed with: download the new app from the [latest release](https://github.com/Davin-X/mergefolders/releases/latest) and replace the old one, run `brew upgrade mergefolders`, or download the new source and rerun the installation command. When you open the app from Applications, it tells you if a newer release exists. Merge windows never check.
+**Update.** Opening the app tells you when a newer release exists. Replace the app with the new download, run `brew upgrade mergefolders`, or rerun the source install.
 
-To uninstall the Finder integration, quit Merge Folders, disable its Finder extension in System Settings, and run the following commands. Unregister the extension while the app is still installed.
+**Uninstall the app.** Quit Merge Folders, switch off its Finder extension, then, while the app is still in Applications, run:
 
 ```sh
 pluginkit -r "/Applications/MergeFolders.app/Contents/PlugIns/MergeFoldersExt.appex"
 ```
 
-Move **MergeFolders.app** from Applications to the Trash. To remove the Terminal command, run `rm -i "$HOME/bin/mergefolders"`.
+Then move **MergeFolders.app** to the Trash.
 
-## Development and release checks
+**Uninstall the Terminal command.** Run `brew uninstall mergefolders`, or `rm -i ~/bin/mergefolders` if you installed it another way.
+
+## From source
+
+Download the source ZIP from the [latest release](https://github.com/Davin-X/mergefolders/releases/latest) and unzip it. In Terminal, type `cd ` (with a space), drag the folder into the window, press Return, and run one of:
 
 ```sh
-bash tests/test_mergefolders.sh
-bash finder/build.sh --build-only
+./install.sh              # Finder app in /Applications + ~/bin/mergefolders
+./install.sh --cli-only   # just ~/bin/mergefolders, no compiling
 ```
 
-The second command compiles a universal (Apple silicon and Intel) app at `finder/build/MergeFolders.app` and signs it ad hoc. Set `SIGN_IDENTITY="Developer ID Application: …"` to sign it for notarization instead. CI verifies the signature, both architectures, the extension linkage, and the bundled CLI.
+Building the app needs write access to `/Applications` and Apple's Command Line Tools (`xcode-select --install`).
 
-The version lives only in the `VERSION=` line of `mergefolders`; the build copies it into the app. To release:
+## Development and releases
 
-1. Bump `VERSION=` in `mergefolders`, commit, and push a matching tag: `git tag v0.3.0 && git push origin v0.3.0`.
-2. The **release** workflow runs the tests, builds the app, and publishes a GitHub release with `MergeFolders-<version>.zip`, the `mergefolders` script, `SHA256SUMS`, and a filled-in Homebrew formula `mergefolders.rb`.
-3. Copy `mergefolders.rb` into `Formula/` of the `Davin-X/homebrew-tap` repository (create it once, public, named exactly `homebrew-tap`).
+```sh
+bash tests/test_mergefolders.sh      # CLI tests
+bash finder/build.sh --build-only    # universal app at finder/build/MergeFolders.app
+```
 
-To ship a signed, notarized app, add these repository secrets: `MACOS_CERT_P12` (base64 of an exported Developer ID Application certificate), `MACOS_CERT_PASSWORD`, `APPLE_ID`, `APPLE_TEAM_ID`, and `APPLE_APP_PASSWORD` (an app-specific password). The workflow then signs with the hardened runtime, notarizes, staples, and also attaches a Homebrew cask, `mergefolders-app.rb`, for `Casks/` in the tap.
+The build signs ad hoc; set `SIGN_IDENTITY="Developer ID Application: …"` to sign for notarization. CI checks the signature, both architectures, the extension and the bundled CLI.
 
-Before tagging a release, test the documented install on a Mac, enable the Finder extension, and merge two disposable folders containing a same-named file. Confirm both contents in the destination, then test removal.
+The version lives only in the `VERSION=` line of `mergefolders`. To release:
 
-## Publish the GitHub Pages guide
+1. Bump `VERSION=`, commit, and push a matching tag: `git tag v0.3.0 && git push origin v0.3.0`.
+2. The **release** workflow tests, builds, and publishes `MergeFolders-<version>.zip`, the `mergefolders` script, `SHA256SUMS`, and a filled-in `mergefolders.rb`.
+3. Copy `mergefolders.rb` into `Formula/` of [Davin-X/homebrew-tap](https://github.com/Davin-X/homebrew-tap).
 
-The illustrated guide lives in [docs/index.html](docs/index.html). In the GitHub repository, open **Settings → Pages → Build and deployment → Source** and select **GitHub Actions**. Push the source to `main`, or run **Documentation** from the Actions tab. The workflow publishes the guide and a downloadable ZIP of that exact commit. The deployment summary shows the live URL. Add that URL to the repository’s **About → Website** field so visitors can find it.
+For a signed, notarized app, add the repository secrets `MACOS_CERT_P12` (base64 Developer ID Application certificate), `MACOS_CERT_PASSWORD`, `APPLE_ID`, `APPLE_TEAM_ID`, and `APPLE_APP_PASSWORD`. The workflow then signs with the hardened runtime, notarizes, staples, and also attaches a cask, `mergefolders-app.rb`, for `Casks/` in the tap.
 
-To preview the design locally, open `docs/index.html` in a browser. To test the download for the current commit, run:
+Before tagging, install on a real Mac, enable the Finder extension, merge two throwaway folders that share a file name, check the result, undo it, and test uninstalling.
+
+### GitHub Pages guide
+
+The guide is [docs/index.html](docs/index.html) and deploys from `main` through the **Documentation** workflow (Settings → Pages → Source: **GitHub Actions**). Open the file in a browser to preview it. To test the source download locally:
 
 ```sh
 git archive --format=zip --prefix=mergefolders/ -o docs/mergefolders-source.zip HEAD
