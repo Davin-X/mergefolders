@@ -300,7 +300,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusLabel.textColor = .secondaryLabelColor
         statusLabel.stringValue = ["Preparing preview…", "Merging…", "Putting files back…"][[Mode.preview, .merge, .undo].firstIndex(of: mode)!]
 
-        if mode == .undo && undoLog == nil { return }
         let arguments = mode == .undo
             ? ["--undo", undoLog!]
             : (preview ? ["--dry-run"] : []) + ["--to", destination.path] + sources.map(\.path)

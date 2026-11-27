@@ -26,6 +26,7 @@ LOCK=""
 LIST=""
 SHADOW=""
 JOURNAL=""
+STOP=0
 
 cleanup() {
   [ -n "$LIST" ] && rm -f -- "$LIST"
@@ -78,6 +79,7 @@ journal() {
   if [ -z "$JOURNAL" ]; then
     if mkdir -p -- "$LOG_DIR" && JOURNAL=$(mktemp "$LOG_DIR/merge-$(date +%Y%m%d-%H%M%S)-XXXXXX"); then
       printf '%s\0' "$DEST" >> "$JOURNAL"
+      find "$LOG_DIR" -name 'merge-*' -mtime +90 -delete 2>/dev/null  # older merges are past undoing
       printf 'undo log: %s\n' "$JOURNAL"
     else
       printf 'warning: cannot write the undo log in %s\n' "$LOG_DIR" >&2
@@ -87,10 +89,10 @@ journal() {
   printf '%s\0%s\0' "$src" "$2" >> "$JOURNAL"
 }
 
-# shortcut: does not recreate empty source folders or .DS_Store the merge pruned; log them too if users ask.
+# shortcut: does not recreate the .DS_Store files the merge deleted; log them too if users ask.
 undo_last() {
   local journal=${1-} item src target parent i
-  local -a rec=()
+  local -a rec=() keep=()
   if [ -z "$journal" ]; then
     # shellcheck disable=SC2010  # journal() names these files; ls -t sorts by sub-second mtime
     journal=$(ls -t "$LOG_DIR"/merge-* 2>/dev/null | grep -v '\.undone$' | head -n 1)
@@ -106,7 +108,8 @@ undo_last() {
     src=${rec[i]}; target=${rec[i+1]}
     i=$((i - 2))
     if [ -e "$src" ] || [ -L "$src" ]; then
-      printf 'failed (original path is in use): %s\n' "$src" >&2; FAILED=$((FAILED + 1)); continue
+      printf 'failed (original path is in use): %s\n' "$src" >&2; FAILED=$((FAILED + 1))
+      keep=("$src" "$target" ${keep[@]+"${keep[@]}"}); continue
     fi
     if [ ! -e "$target" ] && [ ! -L "$target" ]; then
       printf 'failed (no longer in the destination): %s\n' "$target" >&2; FAILED=$((FAILED + 1)); continue
@@ -120,9 +123,16 @@ undo_last() {
       done
     else
       printf 'failed: %s\n' "$target" >&2; FAILED=$((FAILED + 1))
+      keep=("$src" "$target" ${keep[@]+"${keep[@]}"})
     fi
   done
-  mv -- "$journal" "$journal.undone"
+  if [ "${#keep[@]}" -gt 0 ]; then
+    # Keep only what can be retried; the old mtime keeps newer merges first for a bare --undo.
+    printf '%s\0' "$DEST" "${keep[@]}" > "$journal.tmp" && touch -r "$journal" "$journal.tmp" && mv -f -- "$journal.tmp" "$journal"
+    printf 'run the same undo again to retry the failed items\n' >&2
+  else
+    mv -- "$journal" "$journal.undone"
+  fi
   printf 'restored %d · failed %d\n' "$MOVED" "$FAILED"
   [ "$FAILED" -eq 0 ]
 }
@@ -184,6 +194,9 @@ fi
 DEST=$(cd -P -- "$DEST" && printf '%s.' "$PWD") || die "cannot open $DEST"
 DEST=${DEST%.}
 
+# Finish the move in progress and log it before stopping, so Undo sees every move.
+trap 'STOP=1' TERM INT
+
 if [ "$DRY_RUN" -eq 0 ]; then
   acquire_lock
 else
@@ -229,7 +242,7 @@ move_item() {
     parent=${parent%/*}
   done
   if [ "$DRY_RUN" -eq 0 ]; then
-    mkdir -p -- "${target%/*}/" || { printf 'failed: %s\n' "$src" >&2; FAILED=$((FAILED + 1)); return; }
+    [ -d "${target%/*}" ] || mkdir -p -- "${target%/*}/" || { printf 'failed: %s\n' "$src" >&2; FAILED=$((FAILED + 1)); return; }
   fi
   if claimed "$target" || [ -e "$target" ] || [ -L "$target" ]; then
     unique_path "$target"
@@ -252,6 +265,7 @@ move_item() {
 }
 
 for arg in "$@"; do
+  [ "$STOP" -eq 0 ] || break
   while [[ $arg == ?*/ ]]; do arg=${arg%/}; done
   if [ ! -e "$arg" ] && [ ! -L "$arg" ]; then
     printf 'skip (missing): %s\n' "$arg" >&2
@@ -280,18 +294,23 @@ for arg in "$@"; do
     # `find` walks it makes BSD find skip siblings.
     list=$(mktemp) || die "cannot create a temp file"
     LIST=$list
-    if ! find "$src" -name .DS_Store -prune -o \( -type f -o -type l \) -print0 > "$list"; then
+    if ! find "$src" -mindepth 1 -name .DS_Store -prune -o \( -type f -o -type l -o -type d -empty \) -print0 > "$list"; then
       printf 'failed: cannot list all files in %s; left it untouched\n' "$arg" >&2
       FAILED=$((FAILED + 1))
       rm -f -- "$list"
       continue
     fi
     while IFS= read -r -d '' file; do
-      move_item "$file" "${file#"$src"/}"
+      [ "$STOP" -eq 0 ] || break
+      rel=${file#"$src"/}
+      # An empty folder only has to exist in DEST; one already there needs nothing.
+      [ -d "$file" ] && [ ! -L "$file" ] && [ -d "${DEST%/}/$rel" ] && continue
+      move_item "$file" "$rel"
     done < "$list"
     rm -f -- "$list"
 
-    if [ "$KEEP" -eq 0 ] && [ "$DRY_RUN" -eq 0 ]; then
+    # After a cancel, unmoved empty folders are still source content, so leave them.
+    if [ "$KEEP" -eq 0 ] && [ "$DRY_RUN" -eq 0 ] && [ "$STOP" -eq 0 ]; then
       # .DS_Store is not moved, so drop it before pruning or the folder survives.
       find "$src" -name .DS_Store -delete 2>/dev/null || true
       find "$src" -depth -type d -empty -delete 2>/dev/null || true
@@ -325,4 +344,5 @@ if [ "$NOTIFY" -eq 1 ]; then
   fi
 fi
 
+[ "$STOP" -eq 0 ] || exit 130
 [ "$FAILED" -eq 0 ] || exit 1
