@@ -111,16 +111,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let version = NSTextField(labelWithString: "Version \(Self.currentVersion)")
         version.textColor = .secondaryLabelColor
         add(version, frame: NSRect(x: 240, y: 46, width: 240, height: 20))
-        checkForUpdate(label: version)
+        checkForUpdate(label: version, buttonFrame: NSRect(x: 370, y: 10, width: 110, height: 32))
     }
 
     private static var currentVersion: String {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0"
     }
 
-    /// Asks GitHub for the latest release once, when the app is opened by hand,
-    /// and offers a download link if it is newer. Merge windows never phone home.
-    private func checkForUpdate(label: NSTextField) {
+    /// Asks GitHub for the latest release and offers a download link if it is newer:
+    /// every time the app is opened by hand, at most once a week from a merge window.
+    private func checkForUpdate(label: NSTextField, buttonFrame: NSRect) {
+        UserDefaults.standard.set(Date(), forKey: "lastUpdateCheck")
         guard let api = URL(string: "https://api.github.com/repos/Davin-X/mergefolders/releases/latest") else { return }
         var request = URLRequest(url: api, timeoutInterval: 10)
         request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
@@ -138,7 +139,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 label.textColor = .labelColor
                 let get = NSButton(title: "Download…", target: self, action: #selector(self.openRelease))
                 get.bezelStyle = .rounded
-                self.add(get, frame: NSRect(x: 370, y: 10, width: 110, height: 32))
+                get.frame = buttonFrame
+                label.superview?.addSubview(get)
             }
         }.resume()
     }
@@ -204,6 +206,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         previewButton.keyEquivalent = "\r"
         mergeButton.isEnabled = false
         add(mergeButton, frame: NSRect(x: 370, y: 14, width: 110, height: 32))
+
+        let lastCheck = UserDefaults.standard.object(forKey: "lastUpdateCheck") as? Date ?? .distantPast
+        if Date().timeIntervalSince(lastCheck) > 7 * 86_400 {
+            let notice = NSTextField(labelWithString: "")
+            add(notice, frame: NSRect(x: 20, y: 66, width: 340, height: 20))
+            checkForUpdate(label: notice, buttonFrame: NSRect(x: 370, y: 60, width: 110, height: 32))
+        }
     }
 
     private func makeWindow(title: String, height: CGFloat) -> NSWindow {

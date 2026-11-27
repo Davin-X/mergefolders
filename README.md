@@ -125,7 +125,7 @@ Finder merges write diagnostics to `~/Library/Logs/MergeFolders.log`.
 
 ## Update or uninstall
 
-**Update.** Opening the app tells you when a newer release exists. Replace the app with the new download, run `brew upgrade mergefolders`, or rerun the source install.
+**Update.** The app tells you when a newer release exists: every time you open it from Applications, and at most once a week in the merge window. Replace the app with the new download, run `brew upgrade mergefolders`, or rerun the source install.
 
 **Uninstall the app.** Quit Merge Folders, switch off its Finder extension, then, while the app is still in Applications, run:
 
