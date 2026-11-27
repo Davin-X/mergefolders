@@ -25,6 +25,9 @@ The Finder app requires macOS 13 or later, write access to `/Applications`, and 
 
 1. Open **System Settings**, search for **Extensions**, find **Finder Extensions**, and enable **Merge Folders**. The settings location varies by macOS version.
 2. In a Finder window, Command-click the source folders or files. Right-click the selection and choose **Merge Folders…**.
+
+   <img src="docs/assets/finder-menu-guide.png" width="500" alt="Finder context menu with Merge Folders highlighted near the bottom.">
+
 3. **Choose the destination.** Check that Camera and Phone are both listed. Click **Choose…** and select or create the Album folder.
 
    <img src="docs/assets/merge-choose.png" width="500" alt="Merge Folders lists Camera and Phone. Choose is available, and Preview and Merge are disabled until a destination is selected.">
