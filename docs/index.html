@@ -39,12 +39,15 @@
 </fieldset></section>
 
 <section class="chapter" id="install"><h2>Install on Mac</h2><div>
-<p>Download and unzip the source. In Terminal, type <code>cd</code> followed by a space, drag the extracted folder into the window, and press Return.</p>
+<p>Requires macOS 13 or later. Runs on Apple silicon and Intel Macs.</p>
+<h3>Ready-made app</h3><p>Download <code>MergeFolders-&lt;version&gt;.zip</code>, unzip it, and move <b>MergeFolders.app</b> to Applications. If macOS says the app cannot be verified, open <b>System Settings → Privacy &amp; Security</b> and click <b>Open Anyway</b>.</p>
+<a class="download" href="https://github.com/Davin-X/mergefolders/releases/latest">Download the latest release ↗</a>
+<h3>Homebrew (Terminal only)</h3>
+<pre><code>brew install Davin-X/tap/mergefolders</code></pre>
+<h3>From source</h3><p>Download and unzip the source. In Terminal, type <code>cd</code> followed by a space, drag the extracted folder into the window, and press Return. Building the Finder app needs write access to <code>/Applications</code> and Apple’s Command Line Tools (<code>xcode-select --install</code>).</p>
 <a class="download" href="mergefolders-source.zip" download>Download source ZIP ↓</a>
-<h3>Finder and Terminal</h3><p>Requires macOS 13 or later, write access to <code>/Applications</code>, and Apple’s Command Line Tools. If needed, run <code>xcode-select --install</code> and finish the Apple installer first.</p>
-<pre><code>./install.sh</code></pre>
-<h3>Terminal only</h3><p>The CLI installs in your home folder and uses the tools included with macOS.</p>
-<pre><code>./install.sh --cli-only</code></pre>
+<pre><code>./install.sh              # Finder and Terminal
+./install.sh --cli-only   # Terminal only</code></pre>
 </div></section>
 <section class="chapter" id="finder"><h2>Use Finder</h2><div>
 <ol><li><strong>Enable the menu.</strong> In System Settings, search for Extensions. Enable Merge Folders under Finder Extensions.</li>
@@ -54,7 +57,7 @@
 <a class="guide-shot" href="assets/merge-choose.png"><img src="assets/merge-choose.png" width="1000" height="924" loading="lazy" alt="Merge Folders lists Camera and Phone. Choose is available, and Preview and Merge are disabled until a destination is selected."></a></li>
 <li><strong>Preview the names.</strong> Click <b>Preview</b>. The last planned path ends in <code>beach (2).jpg</code>, so both photos will be kept. The dry run leaves the sources in place.
 <a class="guide-shot" href="assets/merge-preview.png"><img src="assets/merge-preview.png" width="1000" height="924" loading="lazy" alt="Preview lists two planned moves into Album and shows the second photo becoming beach (2).jpg."></a></li>
-<li><strong>Merge and inspect the result.</strong> Click <b>Merge</b>. In this example the summary reports two files moved, one renamed, and zero failures. Click <b>Open Folder</b> to see both photos, or <b>Done</b> to close the window.
+<li><strong>Merge and inspect the result.</strong> Click <b>Merge</b>. In this example the summary reports two files moved, one renamed, and zero failures. Click <b>Open Folder</b> to see both photos, <b>Undo Merge</b> to put every file back, or <b>Done</b> to close the window.
 <a class="guide-shot" href="assets/merge-result.png"><img src="assets/merge-result.png" width="1000" height="924" loading="lazy" alt="Completed merge with Open Folder available, Done ready to close the window, and a summary of two moved, one renamed, zero skipped, and zero failed."></a></li>
 </ol>
 </div></section>
@@ -78,7 +81,7 @@ ls "$demo/Merged"</code></pre>
 <details><summary>Where is the Finder menu?</summary><p>Open MergeFolders from Applications and click Open Finder Extensions. Enable Merge Folders, reopen the Finder window, then right-click selected items.</p></details>
 <details><summary>Can I undo a merge?</summary><p>Yes. After a merge, click <strong>Undo Merge</strong>, or run <code>mergefolders --undo</code> in Terminal. Each file moves back to where it was, including after a cancelled or partly failed merge. Files you deleted or replaced since the merge are reported and left alone. Preview first and keep a backup of important files.</p></details>
 <details><summary>What about links or cloud files?</summary><p>Download cloud-only files first. Symbolic links move as links. A relative link can resolve differently in its new location.</p></details>
-<details><summary>How do I update or uninstall?</summary><p>To update, download the new source and rerun your installer. To uninstall, disable the Finder extension, quit Merge Folders, and run:</p>
+<details><summary>How do I update or uninstall?</summary><p>Opening the app from Applications tells you when a newer release exists. To update, replace the app with the one from the <a href="https://github.com/Davin-X/mergefolders/releases/latest">latest release</a>, run <code>brew upgrade mergefolders</code>, or rerun the installer from new source. To uninstall, disable the Finder extension, quit Merge Folders, and run:</p>
 <pre><code>pluginkit -r "/Applications/MergeFolders.app/Contents/PlugIns/MergeFoldersExt.appex"</code></pre><p>Move MergeFolders.app to the Trash. Remove the CLI with <code>rm -i "$HOME/bin/mergefolders"</code>.</p></details>
 </div></section>
 </main><footer><span>Merge Folders for macOS</span><span><a href="https://github.com/Davin-X/mergefolders">Source</a> · <a href="https://github.com/Davin-X/mergefolders/blob/main/LICENSE">MIT licensed</a> · <a href="https://github.com/Davin-X/mergefolders/issues">Report an issue</a></span></footer>
