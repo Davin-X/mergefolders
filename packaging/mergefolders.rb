@@ -1,7 +1,7 @@
 # Homebrew formula template. The release workflow fills in @VERSION@, @URL@ and
 # @SHA256@ and attaches the result; copy it to Formula/ in your homebrew-tap repo.
 class Mergefolders < Formula
-  desc "Merge folders without overwriting same-named files"
+  desc "Combine folders without overwriting same-named files"
   homepage "https://github.com/Davin-X/mergefolders"
   url "@URL@"
   version "@VERSION@"
