@@ -362,7 +362,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self.selectionText.string = wasCancelled
                     ? "Cancelled. Files already moved remain in the destination."
                         + (self.undoLog == nil ? "" : " Click Undo Merge to put them back.")
-                    : output
+                    // The log path is for the Undo button, not for reading.
+                    : output.components(separatedBy: "\n").filter { !$0.hasPrefix("undo log: ") }.joined(separator: "\n")
                 self.selectionText.scrollToBeginningOfDocument(nil)
                 if wasCancelled {
                     self.statusLabel.textColor = .secondaryLabelColor

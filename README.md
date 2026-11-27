@@ -44,7 +44,7 @@ Run `mergefolders --version`, or open the app, to see which version you have.
 
 5. **Merge and inspect the result.** Click **Merge**. In this example the summary reports two files moved, one renamed, and zero failures. Click **Open Folder** to see both photos, **Undo Merge** to put every file back where it was, or **Done** to close the window.
 
-   <img src="docs/assets/merge-result.png" width="500" alt="Completed merge with Open Folder available, Done ready to close the window, and a summary of two moved, one renamed, zero skipped, and zero failed.">
+   <img src="docs/assets/merge-result.png" width="500" alt="Completed merge with Open Folder, Undo Merge, and Done buttons, and a summary of two moved, one renamed, zero skipped, and zero failed.">
 
 If the menu is missing, open **MergeFolders** from Applications, use **Open Finder Extensions…**, and check the switch. Reopen the Finder window after enabling it.
 
