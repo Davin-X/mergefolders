@@ -32,7 +32,7 @@ die() { printf '%s: %s\n' "$PROG" "$1" >&2; exit 1; }
 
 acquire_lock() {
   local d pid
-  d="${TMPDIR:-/tmp}/mergefolders-lock-$(printf '%s' "$DEST" | cksum)"
+  d="${TMPDIR:-/tmp}/mergefolders-lock-$(printf '%s' "$DEST" | shasum -a 256 | cut -c1-16)"
   for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do
     if mkdir "$d" 2>/dev/null; then
       printf '%s' $$ > "$d/pid"

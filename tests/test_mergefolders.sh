@@ -111,7 +111,7 @@ if out=$(PATH="$tmp/bin:$PATH" PICKER_ERROR=-1708 "$script" "$tmp/incomplete" 2>
 assert_contains "picker failure remains visible" "$out" "picker test"
 
 # A lock left behind by a killed merge is taken over, a live one is not.
-lock_dir() { (cd -P -- "$1" && printf '%s' "${TMPDIR:-/tmp}/mergefolders-lock-$(printf '%s' "$PWD" | cksum)"); }
+lock_dir() { (cd -P -- "$1" && printf '%s' "${TMPDIR:-/tmp}/mergefolders-lock-$(printf '%s' "$PWD" | shasum -a 256 | cut -c1-16)"); }
 mkdir -p "$tmp/stale" "$tmp/staleout"
 printf x > "$tmp/stale/file"
 lock=$(lock_dir "$tmp/staleout")
@@ -132,6 +132,19 @@ kill "$holder" 2>/dev/null; wait "$holder" 2>/dev/null
 rm -rf -- "$lock"
 assert_contains "live lock still refuses" "$out" "already running"
 [[ -f "$tmp/busy/file" && ! -e "$tmp/busyout/file" ]] || exit 1
+pass=$((pass + 1))
+
+# Concurrent test: two merges to same destination should serialize, not corrupt.
+mkdir -p "$tmp/conc1/sub" "$tmp/conc2/sub" "$tmp/conc_out"
+printf a > "$tmp/conc1/sub/file"
+printf b > "$tmp/conc2/sub/file"
+"$script" --to "$tmp/conc_out" "$tmp/conc1" "$tmp/conc2" &
+p1=$!
+"$script" --to "$tmp/conc_out" "$tmp/conc1" "$tmp/conc2" &
+p2=$!
+wait "$p1" "$p2"
+# Both should succeed (one after the other); dest has both files with (2) suffix
+[[ -f "$tmp/conc_out/sub/file" && -f "$tmp/conc_out/sub/file (2)" ]] || exit 1
 pass=$((pass + 1))
 
 printf '%d passed, %d failed\n' "$pass" "$fail"
